@@ -1,0 +1,369 @@
+/* static/style.css */
+
+/* Dark theme colors */
+:root {
+    --dark-bg: #1a1b1e;
+    --dark-surface: #25262b;
+    --dark-border: #2c2e33;
+    --dark-text: #e4e5e7;
+    --dark-text-secondary: #a1a1aa;
+    --dark-primary: #3b82f6;
+    --dark-success: #10b981;
+    --dark-error: #ef4444;
+    --dark-warning: #f59e0b;
+    --dark-hover: #2c2e33;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --dark-bg: #111827;
+    --dark-surface: #1f2937;
+    --dark-border: #374151;
+}
+
+/* Dark mode styles */
+.dark {
+    background-color: var(--dark-bg);
+    color: var(--dark-text);
+    --tw-bg-opacity: 1;
+    background-color: var(--dark-bg);
+    color: #e5e7eb;
+}
+
+.dark .bg-white {
+    background-color: var(--dark-surface);
+    border: 1px solid var(--dark-border);
+    border-color: var(--dark-border);
+}
+
+.dark .shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+.dark .text-gray-700 {
+    color: var(--dark-text);
+}
+
+.dark .text-gray-600 {
+    color: var(--dark-text-secondary);
+}
+
+.dark .text-gray-500 {
+    color: var(--dark-text-secondary);
+}
+
+.dark .border-gray-200,
+.dark .border-gray-300 {
+    border-color: var(--dark-border);
+}
+
+.dark .hover\:bg-gray-100:hover {
+    background-color: var(--dark-hover);
+}
+
+/* Sidebar dark mode */
+.dark #sidebar {
+    background: linear-gradient(to bottom, #2c3e50, #1a1b1e);
+    border-right: 1px solid var(--dark-border);
+}
+
+/* Dark mode styles */
+.dark-mode {
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+.dark-mode .bg-white {
+    background-color: #2d2d2d;
+    color: #ffffff;
+}
+
+.dark-mode .text-gray-700 {
+    color: #e0e0e0;
+}
+
+.dark-mode .border-gray-200 {
+    border-color: #404040;
+}
+
+.dark-mode .shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+
+/* Transitions */
+.transition-all {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+}
+
+/* Modal animations */
+#transaction-modal {
+    transition: opacity 0.2s ease-in-out;
+}
+
+#transaction-modal.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Chart container */
+.chart-container {
+    position: relative;
+    height: 300px;
+    transition: all 0.3s ease;
+}
+
+.chart-container:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Loading state */
+.loading {
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Form input focus states */
+input:focus, select:focus {
+    outline: none;
+    ring-2 ring-blue-500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-container {
+        height: 250px;
+    }
+}
+
+/* Sidebar styles */
+@media (max-width: 1024px) {
+    #sidebar {
+        transform: translateX(-100%);
+    }
+    
+    #sidebar.active {
+        transform: translateX(0);
+    }
+}
+
+/* Active state for sidebar buttons */
+.sidebar-btn-active {
+    @apply bg-blue-50 text-blue-600;
+}
+
+/* Mobile menu overlay */
+.mobile-menu-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden;
+}
+
+/* Transition for sidebar */
+.sidebar-transition {
+    @apply transition-all duration-300 ease-in-out;
+}
+
+/* Dark mode sidebar styles */
+.dark #sidebar {
+    @apply bg-gray-800 text-white;
+}
+
+.dark .sidebar-btn-active {
+    @apply bg-gray-700 text-blue-400;
+}
+
+/* Add these new styles */
+.form-input:focus {
+    @apply ring-2 ring-blue-500 border-blue-500;
+}
+
+.btn-primary {
+    @apply px-4 py-2 bg-blue-500 text-white rounded-lg transition-all duration-200;
+}
+
+.btn-primary:hover {
+    @apply bg-blue-600 transform scale-105;
+}
+
+.btn-secondary {
+    @apply px-4 py-2 bg-gray-500 text-white rounded-lg transition-all duration-200;
+}
+
+.btn-secondary:hover {
+    @apply bg-gray-600 transform scale-105;
+}
+
+/* Modal animations */
+.modal {
+    @apply transition-all duration-300 ease-in-out;
+}
+
+.modal.hidden {
+    @apply opacity-0 pointer-events-none;
+}
+
+/* Responsive sidebar */
+@media (max-width: 768px) {
+    #sidebar {
+        @apply -translate-x-full;
+    }
+
+    #sidebar.active {
+        @apply translate-x-0;
+    }
+
+    #main-content {
+        @apply ml-0;
+    }
+
+    .modal {
+        @apply p-4;
+    }
+
+    .modal-content {
+        @apply w-full max-w-full;
+    }
+}
+
+/* Notification animations */
+@keyframes slideIn {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.notification {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Chart styles */
+.dark .chart-container {
+    background-color: var(--dark-surface);
+    border: 1px solid var(--dark-border);
+    padding: 1rem;
+    border-radius: 0.5rem;
+}
+
+/* Card hover effects */
+.card-hover {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.2);
+}
+
+/* Improved form inputs */
+.dark input,
+.dark select {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+    color: var(--dark-text);
+}
+
+.dark input:focus,
+.dark select:focus {
+    border-color: var(--dark-primary);
+    ring-color: var(--dark-primary);
+}
+
+/* Button styles */
+.btn {
+    @apply px-4 py-2 rounded-lg transition-all duration-200 font-medium;
+}
+
+.btn-primary {
+    @apply bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700;
+}
+
+.dark .btn-primary {
+    background-color: var(--dark-primary);
+}
+
+/* Add visual feedback for interactions */
+.active-scale {
+    transform: scale(0.98);
+}
+
+/* Dashboard card animations */
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.metric-card {
+    animation: slideUp 0.5s ease-out forwards;
+    opacity: 0;
+}
+
+.metric-card:nth-child(1) { animation-delay: 0.1s; }
+.metric-card:nth-child(2) { animation-delay: 0.2s; }
+.metric-card:nth-child(3) { animation-delay: 0.3s; }
+
+/* Enhanced card design */
+.metric-card {
+    background: linear-gradient(135deg, var(--tw-gradient-from), var(--tw-gradient-to));
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .metric-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+}
+
+/* Progress bar animations */
+@keyframes progressFill {
+    from { width: 0; }
+    to { width: var(--progress); }
+}
+
+.progress-bar {
+    animation: progressFill 1s ease-out forwards;
+}
+
+/* ...existing styles... */
