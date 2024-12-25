@@ -1,25 +1,39 @@
-// static/app.js
+// =============== 1. Error Handlers and Utilities ===============
+window.addEventListener('error', function(e) {
+    console.error('Global error:', e.error);
+    showNotification('An unexpected error occurred', 'error');
+});
 
-// DOM Elements
-const addTransactionBtn = document.getElementById('add-transaction');
-const transactionModal = document.getElementById('transaction-modal');
-const cancelTransactionBtn = document.getElementById('cancel-transaction');
-const transactionForm = document.getElementById('transaction-form');
-const transactionsList = document.getElementById('transactions-list');
-const userMenu = document.getElementById('user-menu');
-const userDropdown = document.getElementById('user-dropdown');
-const themeToggle = document.getElementById('theme-toggle');
-// Additional DOM Elements
-const filterForm = document.getElementById('filter-form');
-const exportBtn = document.getElementById('export-btn');
-const exportFormatSelect = document.getElementById('export-format');
-const analyticsContainer = document.getElementById('analytics-container');
-// Additional Charts
-let monthlyTrendsChart;
-let dailySpendingChart;
-let categoryComparisonChart;
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+    showNotification('An unexpected error occurred', 'error');
+});
 
-// Enhanced State Management
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Add this performance utility function
+function batchDOMUpdates(updates) {
+    return new Promise(resolve => {
+        requestIdleCallback(() => {
+            requestAnimationFrame(() => {
+                updates();
+                resolve();
+            });
+        });
+    });
+}
+
+// =============== 2. State and DOM Elements ===============
 const state = {
     transactions: [],
     filters: {
@@ -28,547 +42,387 @@ const state = {
         dateTo: ''
     },
     analytics: null,
-    isDarkMode: false
+    isDarkMode: false,
+    chartPeriod: 'monthly'
 };
 
-// Enhanced Event Listeners
-filterForm?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    state.filters = {
-        category: filterForm.category.value,
-        dateFrom: filterForm.dateFrom.value,
-        dateTo: filterForm.dateTo.value
-    };
-    loadTransactions();
-});
+const elements = {
+    addTransactionBtn: document.getElementById('add-transaction-btn'),
+    transactionModal: document.getElementById('transaction-modal'),
+    cancelTransactionBtn: document.getElementById('cancel-transaction'),
+    transactionForm: document.getElementById('transaction-form'),
+    transactionsList: document.getElementById('transactions-list'),
+    userMenu: document.getElementById('user-menu'),
+    userDropdown: document.getElementById('user-dropdown'),
+    themeToggle: document.getElementById('theme-toggle'),
+    filterForm: document.getElementById('filter-form'),
+    exportBtn: document.getElementById('export-btn'),
+    exportFormatSelect: document.getElementById('export-format'),
+    analyticsContainer: document.getElementById('analytics-container')
+};
 
-exportBtn?.addEventListener('click', async () => {
-    const format = exportFormatSelect.value;
-    const response = await fetch(`/api/export?format=${format}`);
-    if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `transactions.${format}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
-    }
-});
-
-// Enhanced Transaction Management
-async function deleteTransaction(id) {
-    if (!confirm('Are you sure you want to delete this transaction?')) return;
-    
-    try {
-        const response = await fetch(`/api/transactions?id=${id}`, {
-            method: 'DELETE'
-        });
-        
-        if (response.ok) {
-            await loadTransactions();
-            updateDashboard();
-            showToast('Transaction deleted successfully');
-        }
-    } catch (error) {
-        console.error('Error deleting transaction:', error);
-        showToast('Error deleting transaction', 'error');
-    }
-}
-
-async function editTransaction(id) {
-    const transaction = state.transactions.find(t => t.id === id);
-    if (!transaction) return;
-    
-    // Fill the form with transaction data
-    transactionForm.description.value = transaction.description;
-    transactionForm.amount.value = transaction.amount;
-    transactionForm.category.value = transaction.category;
-    transactionForm.notes.value = transaction.notes || '';
-    
-    // Update form for edit mode
-    transactionForm.dataset.mode = 'edit';
-    transactionForm.dataset.editId = id;
-    transactionModal.classList.remove('hidden');
-}
-
-// Enhanced Analytics
-async function loadAnalytics() {
-    try {
-        const response = await fetch('/api/analytics');
-        if (response.ok) {
-            state.analytics = await response.json();
-            updateAnalyticsCharts();
-        }
-    } catch (error) {
-        console.error('Error loading analytics:', error);
-    }
-}
-
-function updateAnalyticsCharts() {
-    // Monthly Income vs Expenses
-    const monthlyData = state.analytics.monthly_trends;
-    const labels = Object.keys(monthlyData);
-    
-    if (monthlyTrendsChart) {
-        monthlyTrendsChart.destroy();
-    }
-    
-    monthlyTrendsChart = new Chart(document.getElementById('monthly-trends-chart'), {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Income',
-                    data: labels.map(month => monthlyData[month].income),
-                    backgroundColor: '#10b981'
-                },
-                {
-                    label: 'Expenses',
-                    data: labels.map(month => monthlyData[month].expenses),
-                    backgroundColor: '#ef4444'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                x: { stacked: true },
-                y: { stacked: true }
-            }
-        }
-    });
-    
-    // Daily Spending Pattern
-    if (dailySpendingChart) {
-        dailySpendingChart.destroy();
-    }
-    
-    const dailyData = getDailySpendingData();
-    dailySpendingChart = new Chart(document.getElementById('daily-spending-chart'), {
-        type: 'line',
-        data: {
-            labels: dailyData.labels,
-            datasets: [{
-                label: 'Daily Spending',
-                data: dailyData.values,
-                borderColor: '#3b82f6',
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
-    });
-    
-    // Update category comparison
-    updateCategoryComparisonChart();
-}
-
-function getDailySpendingData() {
-    const dailySpending = {};
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today - 30 * 24 * 60 * 60 * 1000);
-    
-    state.transactions
-        .filter(t => new Date(t.date) >= thirtyDaysAgo && t.amount < 0)
-        .forEach(t => {
-            const date = t.date.substring(0, 10);
-            dailySpending[date] = (dailySpending[date] || 0) + Math.abs(t.amount);
-        });
-    
-    return {
-        labels: Object.keys(dailySpending),
-        values: Object.values(dailySpending)
-    };
-}
-
-// Enhanced UI Feedback
-function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white ${
-        type === 'success' ? 'bg-green-500' : 'bg-red-500'
-    }`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.remove();
-    }, 3000);
-}
-
-// Error Handling
-function handleError(error, context) {
-    console.error(`Error in ${context}:`, error);
-    showToast(`Error: ${error.message || 'Something went wrong'}`, 'error');
-}
-
-
-// Charts
-let spendingChart;
-let categoryChart;
-
-// State
-let transactions = [];
-let isDarkMode = false;
-
-// Event Listeners
-addTransactionBtn.addEventListener('click', () => {
-    transactionModal.classList.remove('hidden');
-});
-
-cancelTransactionBtn.addEventListener('click', () => {
-    transactionModal.classList.add('hidden');
-    transactionForm.reset();
-});
-
-transactionForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const formData = new FormData(transactionForm);
-    const transaction = {
-        description: formData.get('description'),
-        amount: parseFloat(formData.get('amount')),
-        category: formData.get('category')
-    };
-    
-    try {
-        const response = await fetch('/api/transactions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(transaction)
-        });
-        
-        if (response.ok) {
-            transactionModal.classList.add('hidden');
-            transactionForm.reset();
-            loadDashboardData();
-        }
-    } catch (error) {
-        console.error('Error adding transaction:', error);
-    }
-});
-
-// Toggle user dropdown
-userMenu.addEventListener('click', () => {
-    userDropdown.classList.toggle('hidden');
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-    if (!userMenu.contains(e.target)) {
-        userDropdown.classList.add('hidden');
-    }
-});
-
-// Theme toggle
-themeToggle.addEventListener('click', () => {
-    isDarkMode = !isDarkMode;
-    updateTheme();
-});
-
-// Functions
-async function loadTransactions() {
-    try {
-        const response = await fetch('/api/transactions');
-        if (response.ok) {
-            transactions = await response.json();
-            renderTransactions();
-            updateCharts();
-        }
-    } catch (error) {
-        console.error('Error loading transactions:', error);
-    }
-}
-
-function renderTransactions() {
-    transactionsList.innerHTML = transactions
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .map(transaction => `
-            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div>
-                    <p class="font-medium">${transaction.description}</p>
-                    <p class="text-sm text-gray-500">${formatDate(transaction.date)}</p>
-                </div>
-                <div class="text-right">
-                    <p class="font-bold ${transaction.amount > 0 ? 'text-green-500' : 'text-red-500'}">
-                        ${transaction.amount > 0 ? '+' : ''}$${Math.abs(transaction.amount).toFixed(2)}
-                    </p>
-                    <p class="text-sm text-gray-500">${transaction.category}</p>
-                </div>
-            </div>
-        `)
-        .join('');
-}
-
-function updateDashboard() {
-    const totalBalance = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const totalIncome = transactions.filter(t => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
-    const totalExpenses = Math.abs(transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + t.amount, 0));
-
-    document.getElementById('total-balance').textContent = `$${totalBalance.toFixed(2)}`;
-    document.getElementById('total-income').textContent = `$${totalIncome.toFixed(2)}`;
-    document.getElementById('total-expenses').textContent = `-$${totalExpenses.toFixed(2)}`;
-}
-
-function updateCharts() {
-    // Spending Trends Chart
-    const monthlyData = getMonthlyData();
-    if (spendingChart) {
-        spendingChart.destroy();
-    }
-    spendingChart = new Chart(document.getElementById('spending-chart'), {
-        type: 'line',
-        data: {
-            labels: monthlyData.labels,
-            datasets: [{
-                label: 'Net Cash Flow',
-                data: monthlyData.values,
-                borderColor: '#3b82f6',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false
-        }
-    });
-
-    // Category Distribution Chart
-    const categoryData = getCategoryData();
-    if (categoryChart) {
-        categoryChart.destroy();
-    }
-    categoryChart = new Chart(document.getElementById('category-chart'), {
-        type: 'doughnut',
-        data: {
-            labels: categoryData.labels,
-            datasets: [{
-                data: categoryData.values,
-                backgroundColor: [
-                    '#3b82f6',
-                    '#10b981',
-                    '#f59e0b',
-                    '#ef4444',
-                    '#8b5cf6'
-                ]
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false
-        }
-    });
-}
-
-function getMonthlyData() {
-    const months = {};
-    transactions.forEach(t => {
-        const month = t.date.substring(0, 7);
-        months[month] = (months[month] || 0) + t.amount;
-    });
-    
-    return {
-        labels: Object.keys(months),
-        values: Object.values(months)
-    };
-}
-
-function getCategoryData() {
-    const categories = {};
-    transactions
-        .filter(t => t.amount < 0)
-        .forEach(t => {
-            categories[t.category] = (categories[t.category] || 0) + Math.abs(t.amount);
-        });
-    
-    return {
-        labels: Object.keys(categories),
-        values: Object.values(categories)
-    };
-}
-
-function updateTheme() {
-    document.body.classList.toggle('dark', isDarkMode);
-    themeToggle.textContent = isDarkMode ? '☀️' : '🌙';
-    
-    const chartOptions = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: isDarkMode ? '#fff' : '#000'
-                }
-            }
-        },
-        scales: {
-            x: {
-                ticks: {
-                    color: isDarkMode ? '#fff' : '#000'
-                }
-            },
-            y: {
-                ticks: {
-                    color: isDarkMode ? '#fff' : '#000'
-                }
-            }
-        }
-    };
-    
-    if (spendingChart) {
-        spendingChart.options = { ...spendingChart.options, ...chartOptions };
-        spendingChart.update();
-    }
-    if (categoryChart) {
-        categoryChart.options = { ...categoryChart.options, ...chartOptions };
-        categoryChart.update();
-    }
-}
-
-function formatDate(dateString) {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-}
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    loadDashboardData().catch(error => {
-        console.error('Failed to load dashboard:', error);
-        showNotification('Error loading dashboard data', 'error');
-    });
-});
-
-// Toggle user menu
-userMenu?.addEventListener('click', () => {
-    userDropdown.classList.toggle('hidden');
-});
-
-// Modal handling
-addTransactionBtn?.addEventListener('click', () => {
-    transactionModal.classList.remove('hidden');
-});
-
-cancelTransactionBtn?.addEventListener('click', () => {
-    transactionModal.classList.add('hidden');
-    transactionForm.reset();
-});
-
-// Form submission
-transactionForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(transactionForm);
-    const data = {
-        description: formData.get('description'),
-        amount: parseFloat(formData.get('amount')),
-        category: formData.get('category')
-    };
-
-    try {
-        const response = await fetch('/api/transactions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (response.ok) {
-            transactionModal.classList.add('hidden');
-            transactionForm.reset();
-            loadDashboardData();
-        } else {
-            console.error('Failed to add transaction');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-    }
-});
-
-async function loadDashboardData() {
-    try {
-        const transactions = await fetch('/api/transactions').then(r => r.json());
-        const analytics = await fetch('/api/analytics').then(r => r.json());
-        
-        // Load budgets and goals separately to handle potential failures
-        try {
-            const budgets = await fetch('/api/budgets').then(r => r.json());
-            updateBudgets(budgets);
-        } catch (error) {
-            console.warn('Failed to load budgets:', error);
-        }
-
-        try {
-            const goals = await fetch('/api/goals').then(r => r.json());
-            updateGoals(goals);
-        } catch (error) {
-            console.warn('Failed to load goals:', error);
-        }
-
-        updateTransactions(transactions);
-        updateMetrics(analytics);
-        updateCharts(analytics);
-    } catch (error) {
-        throw new Error(`Failed to load dashboard data: ${error.message}`);
-    }
-}
-
-// Add this function to format currency
+// =============== 3. Core Functions ===============
+// Utility Functions
+// Enhanced currency formatting with NaN handling
 function formatCurrency(amount) {
+    if (typeof amount !== 'number' || isNaN(amount)) {
+        return '$0.00';
+    }
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
-        currency: 'USD'
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
     }).format(amount);
 }
 
-// Update the displayTransactions function to show only last 6 transactions
-function displayTransactions(transactions) {
+// Enhanced percentage formatting
+function formatPercentage(value, decimals = 1) {
+    if (typeof value !== 'number' || isNaN(value)) {
+        return '0%';
+    }
+    return `${value.toFixed(decimals)}%`;
+}
+
+function formatDate(dateString) {
+    return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Optimize notification system
+function showNotification(message, type = 'success') {
+    const container = document.getElementById('notification-container');
+    if (!container) return;
+
+    const notification = document.createElement('div');
+    
+    // Use CSS transforms instead of layout properties
+    notification.style.transform = 'translateY(100%)';
+    notification.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white notification-slide ${
+        type === 'success' ? 'bg-green-500' : 'bg-red-500'
+    }`;
+    notification.textContent = message;
+
+    batchDOMUpdates(() => {
+        container.appendChild(notification);
+        // Force reflow to be batched
+        requestAnimationFrame(() => {
+            notification.style.transform = 'translateY(0)';
+        });
+    });
+    
+    // Use requestIdleCallback for removal
+    const timeoutId = setTimeout(() => {
+        requestIdleCallback(() => {
+            notification.style.transform = 'translateY(100%)';
+            notification.addEventListener('transitionend', () => {
+                notification.remove();
+            }, { once: true });
+        });
+    }, 3000);
+
+    // Cleanup on page changes
+    return () => {
+        clearTimeout(timeoutId);
+        notification.remove();
+    };
+}
+
+// Add CSS class for notification animations
+const style = document.createElement('style');
+style.textContent = `
+    .notification-slide {
+        transition: transform 0.3s ease-out;
+        will-change: transform;
+    }
+`;
+document.head.appendChild(style);
+
+// Data Loading Functions
+async function loadDashboardData() {
+    try {
+        console.log('Starting dashboard data load...');
+        
+        const [transactionsRes, analyticsRes, budgetsRes, goalsRes] = await Promise.all([
+            fetch('/api/transactions'),
+            fetch('/api/analytics'),
+            fetch('/api/budgets'),
+            fetch('/api/goals')
+        ]);
+
+        const transactions = await transactionsRes.json();
+        const analytics = await analyticsRes.json();
+        
+        if (transactionsRes.ok) {
+            updateTransactions(transactions);
+        }
+        
+        if (analyticsRes.ok) {
+            updateMetrics(analytics);
+            updateCharts(analytics);
+        }
+
+        if (budgetsRes.ok) {
+            const budgets = await budgetsRes.json();
+            updateBudgets(budgets);
+        }
+
+        if (goalsRes.ok) {
+            const goals = await goalsRes.json();
+            updateGoals(goals);
+        }
+
+    } catch (error) {
+        console.error('Dashboard load error:', error);
+        showNotification('Error loading dashboard data: ' + error.message, 'error');
+    }
+}
+
+// Update Functions
+// Modify updateTransactions function
+function updateTransactions(transactions) {
+    if (!transactions?.length) return;
+
     const list = document.getElementById('transactions-list');
     if (!list) return;
 
-    const recentTransactions = transactions
+    // Create document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    const template = document.createElement('template');
+    
+    // Prepare the HTML string
+    const html = transactions
         .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 6); // Only take the last 6 transactions
-
-    list.innerHTML = recentTransactions.map(t => `
-        <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-            <div class="flex items-center gap-3">
-                <div class="p-2 rounded-full ${t.amount > 0 ? 'bg-green-100' : 'bg-red-100'}">
-                    <svg class="w-4 h-4 ${t.amount > 0 ? 'text-green-500' : 'text-red-500'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        ${t.amount > 0 
-                            ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"/>'
-                            : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6"/>'}
-                    </svg>
+        .slice(0, 6)
+        .map(t => `
+            <div class="transaction-item flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="transaction-icon ${t.amount > 0 ? 'income' : 'expense'}"></div>
+                    <div class="transaction-details">
+                        <h4 class="font-semibold">${t.description}</h4>
+                        <span class="text-sm text-gray-500">
+                            ${new Date(t.date).toLocaleDateString()} · ${t.category}
+                        </span>
+                    </div>
                 </div>
-                <div>
-                    <h4 class="font-semibold">${t.description}</h4>
-                    <span class="text-sm text-gray-500">${new Date(t.date).toLocaleDateString()} · ${t.category}</span>
-                </div>
+                <span class="transaction-amount ${t.amount > 0 ? 'text-green-500' : 'text-red-500'}">
+                    ${formatCurrency(t.amount)}
+                </span>
             </div>
-            <span class="font-bold ${t.amount > 0 ? 'text-green-500' : 'text-red-500'}">
-                ${formatCurrency(t.amount)}
-            </span>
-        </div>
-    `).join('');
+        `).join('');
+
+    // Use batch updates
+    batchDOMUpdates(() => {
+        template.innerHTML = html;
+        fragment.appendChild(template.content);
+        list.innerHTML = '';
+        list.appendChild(fragment);
+    });
 }
 
-// Update the charts
-function updateCharts(analytics) {
-    // Spending Trends Chart
-    const ctx1 = document.getElementById('spending-chart')?.getContext('2d');
-    if (ctx1 && analytics.monthly_trends) {
-        const months = Object.keys(analytics.monthly_trends);
-        const income = months.map(m => analytics.monthly_trends[m].income);
-        const expenses = months.map(m => analytics.monthly_trends[m].expenses);
+// Update metrics with NaN handling
+function updateMetrics(analytics) {
+    if (!analytics?.monthly_trends) {
+        setDefaultMetrics();
+        return;
+    }
 
-        if (window.spendingChart) window.spendingChart.destroy();
+    const currentMonth = Object.keys(analytics.monthly_trends).pop();
+    const monthData = analytics.monthly_trends[currentMonth] || { income: 0, expenses: 0 };
+
+    const totalIncome = Number(monthData.income) || 0;
+    const totalExpenses = Number(monthData.expenses) || 0;
+    const balance = totalIncome - totalExpenses;
+
+    // Safely update metrics with animations
+    updateMetricValue('total-balance', balance);
+    updateMetricValue('total-income', totalIncome);
+    updateMetricValue('total-expenses', totalExpenses);
+
+    // Update balance change with safety checks
+    const prevMonth = Object.keys(analytics.monthly_trends)[Object.keys(analytics.monthly_trends).length - 2];
+    if (prevMonth) {
+        const prevData = analytics.monthly_trends[prevMonth] || { income: 0, expenses: 0 };
+        const prevBalance = (Number(prevData.income) || 0) - (Number(prevData.expenses) || 0);
+        const changePercent = prevBalance !== 0 ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100 : 0;
+        
+        const balanceChange = document.getElementById('balance-change');
+        if (balanceChange) {
+            balanceChange.textContent = `${changePercent > 0 ? '+' : ''}${formatPercentage(changePercent)} from last month`;
+            balanceChange.className = `text-sm ${changePercent > 0 ? 'text-green-500' : 'text-red-500'}`;
+        }
+    }
+}
+
+// Helper function to set default metrics
+function setDefaultMetrics() {
+    updateMetricValue('total-balance', 0);
+    updateMetricValue('total-income', 0);
+    updateMetricValue('total-expenses', 0);
+    
+    const balanceChange = document.getElementById('balance-change');
+    if (balanceChange) {
+        balanceChange.textContent = 'No previous data';
+        balanceChange.className = 'text-sm text-gray-500';
+    }
+}
+
+// Animated metric value updates
+function updateMetricValue(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    const startValue = Number(element.getAttribute('data-value') || 0);
+    const endValue = Number(value) || 0;
+    
+    // Update data attribute
+    element.setAttribute('data-value', endValue);
+
+    // Animate the value change
+    animateValue(element, startValue, endValue, 500);
+}
+
+function animateValue(element, start, end, duration) {
+    const range = end - start;
+    const startTime = performance.now();
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        const currentValue = start + (range * progress);
+        element.textContent = formatCurrency(currentValue);
+
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+
+    requestAnimationFrame(update);
+}
+
+// Update the budget formatting
+function updateBudgets(budgets) {
+    const budgetContainer = document.getElementById('budget-categories');
+    if (!budgetContainer) return;
+
+    budgetContainer.innerHTML = budgets.map(budget => {
+        const percentage = (budget.spent / budget.limit * 100);
+        const progressClass = percentage >= 90 ? 'budget-danger' : 
+                            percentage >= 75 ? 'budget-warning' : 
+                            'budget-progress-bar';
+        const statusColor = percentage >= 90 ? 'text-red-500' : 
+                          percentage >= 75 ? 'text-yellow-500' : 
+                          'text-blue-500';
+        
+        return `
+            <div class="budget-card bg-white p-4 rounded-lg shadow">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="font-semibold text-gray-700">${budget.category}</h4>
+                    <span class="text-sm font-medium ${statusColor}">${percentage.toFixed(1)}%</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-600 mb-2">
+                    <span class="formatted-value">${formatCurrency(budget.spent)}</span>
+                    <span class="formatted-value">of ${formatCurrency(budget.limit)}</span>
+                </div>
+                <div class="budget-progress">
+                    <div class="${progressClass}" style="width: ${percentage}%"></div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">
+                    ${getRemainingBudgetText(budget)}
+                </p>
+            </div>
+        `;
+    }).join('');
+}
+
+// Add helper function for remaining budget text
+function getRemainingBudgetText(budget) {
+    const remaining = budget.limit - budget.spent;
+    const isOverBudget = remaining < 0;
+    const absoluteRemaining = Math.abs(remaining);
+    
+    return isOverBudget
+        ? `Over budget by ${formatCurrency(absoluteRemaining)}`
+        : `${formatCurrency(absoluteRemaining)} remaining`;
+}
+
+// Update the goals formatting
+function updateGoals(goals) {
+    const goalsContainer = document.getElementById('savings-goals');
+    if (!goalsContainer) return;
+
+    goalsContainer.innerHTML = goals.map(goal => {
+        const percentage = (goal.current / goal.target * 100);
+        const daysLeft = Math.ceil((new Date(goal.target_date) - new Date()) / (1000 * 60 * 60 * 24));
+        
+        return `
+            <div class="goal-card">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="font-semibold text-gray-700">${goal.name}</h4>
+                    <span class="text-sm font-medium text-purple-500">${percentage.toFixed(1)}%</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-600">
+                    <span class="formatted-value">${formatCurrency(goal.current)}</span>
+                    <span class="formatted-value">of ${formatCurrency(goal.target)}</span>
+                </div>
+                <div class="goal-progress">
+                    <div class="goal-progress-bar" style="width: ${percentage}%"></div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">
+                    ${daysLeft > 0 ? `${daysLeft} days left` : 'Goal deadline passed'} •
+                    Target: ${formatDate(goal.target_date)}
+                </p>
+            </div>
+        `;
+    }).join('');
+}
+
+// Chart Functions
+// Optimize chart updates
+function updateCharts(analytics) {
+    if (!analytics) return;
+
+    // Debounce chart updates
+    const debouncedChartUpdate = debounce(() => {
+        requestIdleCallback(() => {
+            try {
+                updateSpendingTrendsChart(analytics);
+                updateCategoryDistributionChart(analytics);
+            } catch (error) {
+                console.error('Error updating charts:', error);
+                showNotification('Failed to update charts', 'error');
+            }
+        }, { timeout: 2000 });
+    }, 150);
+
+    debouncedChartUpdate();
+}
+
+function updateSpendingTrendsChart(analytics) {
+    const ctx1 = document.getElementById('spending-chart')?.getContext('2d');
+    if (!ctx1) return;
+
+    try {
+        if (window.spendingChart) {
+            window.spendingChart.destroy();
+        }
+
+        const months = Object.keys(analytics.monthly_trends || {});
+        const income = months.map(m => analytics.monthly_trends[m].income || 0);
+        const expenses = months.map(m => analytics.monthly_trends[m].expenses || 0);
+
+        const gradientIncome = ctx1.createLinearGradient(0, 0, 0, 400);
+        gradientIncome.addColorStop(0, 'rgba(16, 185, 129, 0.2)');
+        gradientIncome.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
+        const gradientExpenses = ctx1.createLinearGradient(0, 0, 0, 400);
+        gradientExpenses.addColorStop(0, 'rgba(239, 68, 68, 0.2)');
+        gradientExpenses.addColorStop(1, 'rgba(239, 68, 68, 0)');
+
         window.spendingChart = new Chart(ctx1, {
             type: 'line',
             data: {
@@ -578,80 +432,662 @@ function updateCharts(analytics) {
                         label: 'Income',
                         data: income,
                         borderColor: '#10b981',
-                        tension: 0.4
+                        backgroundColor: gradientIncome,
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#10b981',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#10b981',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
                     },
                     {
                         label: 'Expenses',
                         data: expenses,
                         borderColor: '#ef4444',
-                        tension: 0.4
+                        backgroundColor: gradientExpenses,
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#ef4444',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        top: 20,
+                        right: 20,
+                        bottom: 20,
+                        left: 20
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        titleColor: '#000',
+                        bodyColor: '#666',
+                        bodySpacing: 4,
+                        padding: 12,
+                        borderColor: '#e5e7eb',
+                        borderWidth: 1,
+                        usePointStyle: true,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += new Intl.NumberFormat('en-US', {
+                                        style: 'currency',
+                                        currency: 'USD'
+                                    }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            font: {
+                                size: 12
+                            },
+                            color: '#6b7280'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            borderDash: [2, 2],
+                            color: '#e5e7eb'
+                        },
+                        ticks: {
+                            font: {
+                                size: 12
+                            },
+                            color: '#6b7280',
+                            callback: function(value) {
+                                return new Intl.NumberFormat('en-US', {
+                                    style: 'currency',
+                                    currency: 'USD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value);
+                            }
+                        }
                     }
                 }
             }
         });
+
+        // Add custom legend
+        const legendContainer = document.createElement('div');
+        legendContainer.className = 'chart-legend';
+        legendContainer.innerHTML = `
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #10b981"></div>
+                <span>Income</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #ef4444"></div>
+                <span>Expenses</span>
+            </div>
+        `;
+        ctx1.canvas.parentNode.appendChild(legendContainer);
+
+    } catch (error) {
+        console.error('Error creating spending trends chart:', error);
     }
+}
 
-    // Category Distribution Chart
+function updateCategoryDistributionChart(analytics) {
     const ctx2 = document.getElementById('category-chart')?.getContext('2d');
-    if (ctx2 && analytics.category_breakdown) {
-        const categories = Object.keys(analytics.category_breakdown);
-        const amounts = Object.values(analytics.category_breakdown);
+    if (!ctx2) return;
 
-        if (window.categoryChart) window.categoryChart.destroy();
+    try {
+        if (window.categoryChart) {
+            window.categoryChart.destroy();
+        }
+
+        const categories = Object.keys(analytics.category_breakdown || {});
+        const amounts = Object.values(analytics.category_breakdown || {});
+
+        // Color palette for categories
+        const categoryColors = [
+            '#3b82f6', // Blue
+            '#10b981', // Green
+            '#f59e0b', // Yellow
+            '#ef4444', // Red
+            '#8b5cf6', // Purple
+            '#ec4899', // Pink
+            '#6366f1', // Indigo
+            '#14b8a6', // Teal
+            '#f97316', // Orange
+            '#06b6d4'  // Cyan
+        ];
+
         window.categoryChart = new Chart(ctx2, {
             type: 'doughnut',
             data: {
                 labels: categories,
                 datasets: [{
                     data: amounts,
-                    backgroundColor: [
-                        '#3b82f6',
-                        '#10b981',
-                        '#f59e0b',
-                        '#ef4444',
-                        '#8b5cf6',
-                        '#ec4899'
-                    ]
+                    backgroundColor: categoryColors.slice(0, categories.length),
+                    borderColor: 'white',
+                    borderWidth: 2,
+                    hoverOffset: 4
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        top: 20,
+                        right: 20,
+                        bottom: 20,
+                        left: 20
+                    }
+                },
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20,
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        titleColor: '#000',
+                        bodyColor: '#666',
+                        bodySpacing: 4,
+                        padding: 12,
+                        borderColor: '#e5e7eb',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                const formattedValue = new Intl.NumberFormat('en-US', {
+                                    style: 'currency',
+                                    currency: 'USD'
+                                }).format(value);
+                                return `${label}: ${formattedValue} (${percentage}%)`;
+                            }
+                        }
                     }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true
                 }
             }
         });
+    } catch (error) {
+        console.error('Error creating category distribution chart:', error);
     }
 }
 
-// Update metrics display
-function updateMetrics(analytics) {
-    const totalIncome = analytics.monthly_trends?.[Object.keys(analytics.monthly_trends).pop()]?.income || 0;
-    const totalExpenses = analytics.monthly_trends?.[Object.keys(analytics.monthly_trends).pop()]?.expenses || 0;
-    const balance = totalIncome - totalExpenses;
+// Add window resize handler
+window.addEventListener('resize', debounce(() => {
+    if (window.spendingChart) {
+        window.spendingChart.resize();
+    }
+    if (window.categoryChart) {
+        window.categoryChart.resize();
+    }
+}, 250));
 
-    document.getElementById('total-balance').textContent = formatCurrency(balance);
-    document.getElementById('total-income').textContent = formatCurrency(totalIncome);
-    document.getElementById('total-expenses').textContent = formatCurrency(totalExpenses);
+// Enhanced chart theme handling
+function updateChartsTheme() {
+    const isDark = document.body.classList.contains('dark');
+    const theme = {
+        backgroundColor: isDark ? 'transparent' : 'white',
+        textColor: isDark ? '#e5e7eb' : '#374151',
+        gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb',
+        tooltipBg: isDark ? 'rgba(17, 24, 39, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+        tooltipText: isDark ? '#e5e7eb' : '#000000'
+    };
 
-    // Calculate and display balance change percentage
-    const prevMonth = Object.keys(analytics.monthly_trends)[Object.keys(analytics.monthly_trends).length - 2];
-    if (prevMonth) {
-        const prevBalance = analytics.monthly_trends[prevMonth].income - analytics.monthly_trends[prevMonth].expenses;
-        const changePercent = ((balance - prevBalance) / Math.abs(prevBalance)) * 100;
-        document.getElementById('balance-change').textContent = 
-            `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(1)}% from last month`;
+    const chartOptions = {
+        plugins: {
+            legend: {
+                labels: {
+                    color: theme.textColor,
+                    usePointStyle: true
+                }
+            },
+            tooltip: {
+                backgroundColor: theme.tooltipBg,
+                titleColor: theme.tooltipText,
+                bodyColor: theme.tooltipText,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb'
+            }
+        },
+        scales: {
+            x: {
+                grid: {
+                    color: theme.gridColor,
+                    drawBorder: false
+                },
+                ticks: { color: theme.textColor }
+            },
+            y: {
+                grid: {
+                    color: theme.gridColor,
+                    drawBorder: false
+                },
+                ticks: { color: theme.textColor }
+            }
+        }
+    };
+
+    [spendingChart, categoryChart].forEach(chart => {
+        if (chart) {
+            chart.options = { ...chart.options, ...chartOptions };
+            chart.update('none'); // Update without animation for better performance
+        }
+    });
+}
+
+// Theme Management
+function handleThemeStorage() {
+    try {
+        const getPreferredTheme = () => {
+            try {
+                return localStorage.getItem('theme') || 
+                    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            } catch (e) {
+                console.warn('Unable to access localStorage:', e);
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+        };
+
+        const applyTheme = (theme) => {
+            document.body.classList.toggle('dark', theme === 'dark');
+            state.isDarkMode = theme === 'dark';
+        };
+
+        // Initial theme setup
+        applyTheme(getPreferredTheme());
+
+        // Theme toggle handler
+        document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+            const newTheme = document.body.classList.contains('dark') ? 'light' : 'dark';
+            applyTheme(newTheme);
+            try {
+                localStorage.setItem('theme', newTheme);
+            } catch (e) {
+                console.warn('Unable to save theme preference:', e);
+            }
+            updateChartsTheme();
+        });
+    } catch (e) {
+        console.warn('Theme system initialization failed:', e);
     }
 }
+
+// =============== 4. Event Listeners ===============
+// Optimize event listeners
+function initializeEventListeners() {
+    // Transaction Modal Events
+    elements.addTransactionBtn?.addEventListener('click', () => {
+        elements.transactionModal?.classList.remove('hidden');
+    });
+
+    elements.cancelTransactionBtn?.addEventListener('click', () => {
+        elements.transactionModal?.classList.add('hidden');
+        elements.transactionForm?.reset();
+    });
+
+    // Form Submissions
+    elements.transactionForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(elements.transactionForm);
+        const data = {
+            description: formData.get('description'),
+            amount: parseFloat(formData.get('amount')),
+            category: formData.get('category'),
+            date: new Date().toISOString().split('T')[0]
+        };
+
+        try {
+            const response = await fetch('/api/transactions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showNotification('Transaction added successfully', 'success');
+                elements.transactionModal?.classList.add('hidden');
+                elements.transactionForm?.reset();
+                await loadDashboardData();
+            } else {
+                throw new Error('Failed to add transaction');
+            }
+        } catch (error) {
+            console.error('Transaction error:', error);
+            showNotification(error.message, 'error');
+        }
+    });
+
+    // Theme Toggle
+    elements.themeToggle?.addEventListener('click', () => {
+        state.isDarkMode = !state.isDarkMode;
+        document.body.classList.toggle('dark', state.isDarkMode);
+        localStorage.setItem('theme', state.isDarkMode ? 'dark' : 'light');
+    });
+
+    // Other event listeners...
+    elements.filterForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        state.filters = {
+            category: elements.filterForm.category.value,
+            dateFrom: elements.filterForm.dateFrom.value,
+            dateTo: elements.filterForm.dateTo.value
+        };
+        loadDashboardData();
+    });
+
+    elements.userMenu?.addEventListener('click', () => {
+        elements.userDropdown?.classList.toggle('hidden');
+    });
+
+    document.getElementById('user-menu')?.addEventListener('click', () => {
+        document.getElementById('user-dropdown')?.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+        const userMenu = document.getElementById('user-menu');
+        const userDropdown = document.getElementById('user-dropdown');
+        if (userMenu && userDropdown && !userMenu.contains(e.target)) {
+            userDropdown.classList.add('hidden');
+        }
+    });
+
+    document.getElementById('add-transaction-btn')?.addEventListener('click', () => {
+        document.getElementById('transaction-modal')?.classList.remove('hidden');
+    });
+
+    document.getElementById('cancel-transaction')?.addEventListener('click', () => {
+        document.getElementById('transaction-modal')?.classList.add('hidden');
+        document.getElementById('transaction-form')?.reset();
+    });
+
+    document.getElementById('transaction-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const data = {
+            description: formData.get('description'),
+            amount: parseFloat(formData.get('amount')),
+            category: formData.get('category'),
+            date: new Date().toISOString().split('T')[0]
+        };
+
+        try {
+            const response = await fetch('/api/transactions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showNotification('Transaction added successfully');
+                document.getElementById('transaction-modal')?.classList.add('hidden');
+                form.reset();
+                await loadDashboardData();
+            } else {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to add transaction');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification(error.message, 'error');
+        }
+    });
+
+    document.getElementById('budget-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const data = {
+            category: formData.get('category'),
+            limit: parseFloat(formData.get('limit'))
+        };
+
+        try {
+            const response = await fetch('/api/budgets', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showNotification('Budget limit set successfully');
+                document.getElementById('budget-modal')?.classList.add('hidden');
+                form.reset();
+                await loadDashboardData();
+            } else {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to set budget limit');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification(error.message, 'error');
+        }
+    });
+
+    document.getElementById('goal-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const data = {
+            name: formData.get('goal-name'),
+            target: parseFloat(formData.get('target-amount')),
+            target_date: formData.get('target-date')
+        };
+
+        try {
+            const response = await fetch('/api/goals', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showNotification('Savings goal added successfully');
+                document.getElementById('goal-modal')?.classList.add('hidden');
+                form.reset();
+                await loadDashboardData();
+            } else {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to add savings goal');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification(error.message, 'error');
+        }
+    });
+
+    document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+        document.body.classList.toggle('dark');
+        state.isDarkMode = document.body.classList.contains('dark');
+        localStorage.setItem('theme', state.isDarkMode ? 'dark' : 'light');
+        updateChartsTheme();
+    });
+
+    function updateChartPeriod(period) {
+        state.chartPeriod = period;
+        updateCharts(state.analytics);
+    }
+
+    document.getElementById('export-transactions')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/export/transactions');
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'transactions.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } else {
+                throw new Error('Failed to export transactions');
+            }
+        } catch (error) {
+            console.error('Export error:', error);
+            showNotification('Failed to export transactions', 'error');
+        }
+    });
+
+    // Debounce filter changes
+    const debouncedFilterUpdate = debounce((e) => {
+        state.filters.category = e.target.value;
+        updateTransactions(state.transactions);
+    }, 250);
+
+    document.getElementById('category-filter')?.addEventListener('change', debouncedFilterUpdate);
+
+    document.getElementById('date-filter')?.addEventListener('change', (e) => {
+        state.filters.dateRange = e.target.value;
+        updateTransactions(state.transactions);
+    });
+
+    document.getElementById('mobile-menu-button')?.addEventListener('click', () => {
+        document.getElementById('sidebar')?.classList.toggle('-translate-x-full');
+    });
+
+    const modals = ['transaction-modal', 'budget-modal', 'goal-modal'];
+    modals.forEach(modalId => {
+        const modal = document.getElementById(modalId);
+        modal?.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+                const form = modal.querySelector('form');
+                form?.reset();
+            }
+        });
+    });
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) {
+            document.body.classList.toggle('dark', e.matches);
+            state.isDarkMode = e.matches;
+            updateChartsTheme();
+        }
+    });
+
+    // Enhanced Sidebar Handling
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+
+    function toggleSidebar(show) {
+        sidebar?.classList.toggle('active', show);
+        sidebarOverlay?.classList.toggle('active', show);
+        document.body.style.overflow = show ? 'hidden' : '';
+    }
+
+    mobileMenuButton?.addEventListener('click', () => toggleSidebar(true));
+    sidebarOverlay?.addEventListener('click', () => toggleSidebar(false));
+
+    // Close sidebar on screen resize if in mobile view
+    window.addEventListener('resize', debounce(() => {
+        if (window.innerWidth > 1024 && sidebar?.classList.contains('active')) {
+            toggleSidebar(false);
+        }
+    }, 250));
+
+    // Handle escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar?.classList.contains('active')) {
+            toggleSidebar(false);
+        }
+    });
+}
+
+// =============== 5. Initialization ===============
+function initializeApp() {
+    // Add cache-busting query parameter
+    const version = new Date().getTime();
+    const preloadLinks = [
+        { rel: 'preconnect', href: 'https://cdn.jsdelivr.net' },
+        { rel: 'preload', href: `/static/tailwind.css?v=${version}`, as: 'style' },
+        { rel: 'preload', href: `/static/style.css?v=${version}`, as: 'style' },
+        { rel: 'preload', href: `/static/app.js?v=${version}`, as: 'script' }
+    ];
+
+    preloadLinks.forEach(link => {
+        const linkEl = document.createElement('link');
+        Object.entries(link).forEach(([key, value]) => linkEl[key] = value);
+        document.head.appendChild(linkEl);
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        try {
+            handleThemeStorage();
+            initializeEventListeners();
+            
+            const loadDashboardWithRetry = async (retries = 3) => {
+                try {
+                    await loadDashboardData();
+                } catch (error) {
+                    if (retries > 0) {
+                        console.warn(`Retrying dashboard load... (${retries} attempts left)`);
+                        setTimeout(() => loadDashboardWithRetry(retries - 1), 1000);
+                    } else {
+                        console.error('Failed to load dashboard after retries:', error);
+                        showNotification('Error loading dashboard data', 'error');
+                    }
+                }
+            };
+
+            loadDashboardWithRetry();
+        } catch (e) {
+            console.error('App initialization failed:', e);
+        }
+    });
+}
+
+// Start the application
+initializeApp();

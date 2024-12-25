@@ -12,65 +12,76 @@
 </head>
 <body class="bg-gray-50">
     <!-- Sidebar -->
-    <aside class="fixed inset-y-0 left-0 w-80 bg-gradient-to-b from-blue-600 to-blue-800 text-white shadow-xl transform transition-transform duration-300 ease-in-out z-40" id="sidebar">
-        <div class="flex flex-col h-full">
-            <!-- Logo -->
-            <div class="p-4 border-b">
-                <h1 class="text-xl font-bold">Finance Tracker Pro</h1>
-            </div>
-            
-            <!-- User Profile -->
-            <div class="p-4 border-b">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-gradient-to-b from-blue-600 to-blue-800">
+        <div class="sidebar-content">
+            <!-- Logo Section -->
+            <div class="p-6 border-b border-opacity-20 border-white">
                 <div class="flex items-center space-x-3">
-                    <div class="flex-1">
-                        <p class="font-medium">{{ username }}</p>
-                        <p class="text-sm text-gray-500">Personal Account</p>
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h1 class="text-2xl font-bold text-white">Finance Pro</h1>
+                </div>
+            </div>
+
+            <!-- User Profile -->
+            <div class="p-6 border-b border-opacity-20 border-white">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                        <span class="text-lg font-semibold text-white">{{ username[0].upper() }}</span>
+                    </div>
+                    <div>
+                        <h2 class="text-white font-medium">{{ username }}</h2>
+                        <p class="text-sm text-white/70">Personal Account</p>
                     </div>
                 </div>
             </div>
 
             <!-- Navigation -->
-            <nav class="flex-1 p-4 space-y-4">
-                <button id="add-transaction-btn" 
-                        class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-600">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            <nav class="flex-1 p-4 space-y-2">
+                <button id="add-transaction-btn" class="sidebar-nav-item w-full">
+                    <svg class="text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                     </svg>
-                    Add Transaction
+                    <span>Add Transaction</span>
                 </button>
 
-                <button id="set-budget-btn"
-                        class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-green-50 hover:text-green-600">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                <button id="set-budget-btn" class="sidebar-nav-item w-full">
+                    <svg class="text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                     </svg>
-                    Set Budget Limits
+                    <span>Set Budget</span>
                 </button>
 
-                <button id="add-goal-btn"
-                        class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-purple-50 hover:text-purple-600">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                <button id="add-goal-btn" class="sidebar-nav-item w-full">
+                    <svg class="text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M13 10V3L4 14h7v7l9-11h-7z"/>
                     </svg>
-                    Add Savings Goal
+                    <span>Add Goal</span>
                 </button>
 
-                <button id="theme-toggle-btn"
-                        class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-gray-50">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                <button id="theme-toggle-btn" class="sidebar-nav-item w-full">
+                    <svg class="text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
                     </svg>
-                    Toggle Theme
+                    <span>Toggle Theme</span>
                 </button>
             </nav>
 
             <!-- Bottom Section -->
-            <div class="p-4 border-t">
-                <a href="/logout" class="flex items-center p-3 text-red-600 rounded-lg hover:bg-red-50">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            <div class="p-4 border-t border-opacity-20 border-white">
+                <a href="/logout" class="sidebar-nav-item text-red-400 hover:text-red-300">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
                     </svg>
-                    Logout
+                    <span>Logout</span>
                 </a>
             </div>
         </div>
@@ -129,13 +140,36 @@
             </div>
         </div>
 
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-wrapper">
+                <div class="trend-chart-container">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-700">Spending Trends</h3>
+                        <div class="flex gap-2">
+                            <button class="btn btn-secondary text-sm" onclick="updateChartPeriod('month')">Month</button>
+                            <button class="btn btn-secondary text-sm" onclick="updateChartPeriod('year')">Year</button>
+                        </div>
+                    </div>
+                    <canvas id="spending-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-wrapper">
+                <div class="trend-chart-container">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Category Distribution</h3>
+                    <canvas id="category-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Budget Progress -->
         <div class="bg-white rounded-lg shadow-md my-6 p-6">
-            <h3 class="text-lg font-semibold text-gray-700 mb-4">Budget Overview</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div id="budget-categories" class="space-y-4">
-                    <!-- Budget progress bars will be inserted here -->
-                </div>
+            <div class="mb-4">
+                <h3 class="text-lg font-semibold text-gray-700">Budget Overview</h3>
+            </div>
+            <div id="budget-categories" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Budget progress cards will be inserted here -->
             </div>
         </div>
 
@@ -146,26 +180,6 @@
             </div>
             <div id="savings-goals" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Savings goals will be inserted here -->
-            </div>
-        </div>
-
-        <!-- Charts -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 my-6">
-            <div class="bg-white p-6 rounded-lg shadow-md card-hover">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-700">Spending Trends</h3>
-                    <div class="flex gap-2">
-                        <button class="btn btn-secondary text-sm" onclick="updateChartPeriod('month')">Month</button>
-                        <button class="btn btn-secondary text-sm" onclick="updateChartPeriod('year')">Year</button>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <canvas id="spending-chart"></canvas>
-                </div>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4">Category Distribution</h3>
-                <canvas id="category-chart"></canvas>
             </div>
         </div>
 
