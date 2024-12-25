@@ -33,6 +33,55 @@ function batchDOMUpdates(updates) {
     });
 }
 
+// Add these functions after the utility functions section
+function initializeModals() {
+    const modals = document.querySelectorAll('.modal');
+    const modalOverlays = document.querySelectorAll('.modal-overlay');
+    const modalCloseButtons = document.querySelectorAll('.modal-close');
+
+    // Open modal triggers
+    document.getElementById('add-transaction-btn')?.addEventListener('click', () => {
+        document.getElementById('transaction-modal')?.classList.remove('hidden');
+    });
+
+    document.getElementById('set-budget-btn')?.addEventListener('click', () => {
+        document.getElementById('budget-modal')?.classList.remove('hidden');
+    });
+
+    document.getElementById('savings-goals-btn')?.addEventListener('click', () => {
+        document.getElementById('goal-modal')?.classList.remove('hidden');
+    });
+
+    // Close modal handlers
+    modalOverlays.forEach(overlay => {
+        overlay.addEventListener('click', () => {
+            modals.forEach(modal => modal.classList.add('hidden'));
+        });
+    });
+
+    modalCloseButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            button.closest('.modal').classList.add('hidden');
+        });
+    });
+}
+
+function initializeSidebar() {
+    const sidebarButton = document.getElementById('mobile-menu-button');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+    sidebarButton?.addEventListener('click', () => {
+        sidebar?.classList.remove('-translate-x-full');
+        sidebarOverlay?.classList.remove('hidden');
+    });
+
+    sidebarOverlay?.addEventListener('click', () => {
+        sidebar?.classList.add('-translate-x-full');
+        sidebarOverlay?.classList.add('hidden');
+    });
+}
+
 // =============== 2. State and DOM Elements ===============
 const state = {
     transactions: [],
@@ -43,7 +92,11 @@ const state = {
     },
     analytics: null,
     isDarkMode: false,
-    chartPeriod: 'monthly'
+    chartPeriod: 'monthly',
+    charts: {
+        spending: null,
+        category: null
+    }
 };
 
 const elements = {
@@ -407,8 +460,8 @@ function updateSpendingTrendsChart(analytics) {
     if (!ctx1) return;
 
     try {
-        if (window.spendingChart) {
-            window.spendingChart.destroy();
+        if (state.charts.spending) {
+            state.charts.spending.destroy();
         }
 
         const months = Object.keys(analytics.monthly_trends || {});
@@ -423,7 +476,7 @@ function updateSpendingTrendsChart(analytics) {
         gradientExpenses.addColorStop(0, 'rgba(239, 68, 68, 0.2)');
         gradientExpenses.addColorStop(1, 'rgba(239, 68, 68, 0)');
 
-        window.spendingChart = new Chart(ctx1, {
+        state.charts.spending = new Chart(ctx1, {
             type: 'line',
             data: {
                 labels: months,
@@ -566,8 +619,8 @@ function updateCategoryDistributionChart(analytics) {
     if (!ctx2) return;
 
     try {
-        if (window.categoryChart) {
-            window.categoryChart.destroy();
+        if (state.charts.category) {
+            state.charts.category.destroy();
         }
 
         const categories = Object.keys(analytics.category_breakdown || {});
@@ -587,7 +640,7 @@ function updateCategoryDistributionChart(analytics) {
             '#06b6d4'  // Cyan
         ];
 
-        window.categoryChart = new Chart(ctx2, {
+        state.charts.category = new Chart(ctx2, {
             type: 'doughnut',
             data: {
                 labels: categories,
@@ -657,19 +710,19 @@ function updateCategoryDistributionChart(analytics) {
 
 // Add window resize handler
 window.addEventListener('resize', debounce(() => {
-    if (window.spendingChart) {
-        window.spendingChart.resize();
+    if (state.charts.spending) {
+        state.charts.spending.resize();
     }
-    if (window.categoryChart) {
-        window.categoryChart.resize();
+    if (state.charts.category) {
+        state.charts.category.resize();
     }
 }, 250));
 
 // Enhanced chart theme handling
 function updateChartsTheme() {
-    const isDark = document.body.classList.contains('dark');
+    const isDark = document.documentElement.classList.contains('dark');
     const theme = {
-        backgroundColor: isDark ? 'transparent' : 'white',
+        backgroundColor: isDark ? '#1f2937' : 'white',
         textColor: isDark ? '#e5e7eb' : '#374151',
         gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb',
         tooltipBg: isDark ? 'rgba(17, 24, 39, 0.9)' : 'rgba(255, 255, 255, 0.9)',
@@ -709,49 +762,61 @@ function updateChartsTheme() {
         }
     };
 
-    [spendingChart, categoryChart].forEach(chart => {
-        if (chart) {
-            chart.options = { ...chart.options, ...chartOptions };
-            chart.update('none'); // Update without animation for better performance
-        }
-    });
+    if (state.charts.spending) {
+        state.charts.spending.options = { ...state.charts.spending.options, ...chartOptions };
+        state.charts.spending.update('none');
+    }
+    if (state.charts.category) {
+        state.charts.category.options = { ...state.charts.category.options, ...chartOptions };
+        state.charts.category.update('none');
+    }
 }
 
-// Theme Management
-function handleThemeStorage() {
-    try {
-        const getPreferredTheme = () => {
-            try {
-                return localStorage.getItem('theme') || 
-                    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            } catch (e) {
-                console.warn('Unable to access localStorage:', e);
-                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            }
-        };
-
-        const applyTheme = (theme) => {
-            document.body.classList.toggle('dark', theme === 'dark');
-            state.isDarkMode = theme === 'dark';
-        };
-
-        // Initial theme setup
-        applyTheme(getPreferredTheme());
-
-        // Theme toggle handler
-        document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
-            const newTheme = document.body.classList.contains('dark') ? 'light' : 'dark';
-            applyTheme(newTheme);
-            try {
-                localStorage.setItem('theme', newTheme);
-            } catch (e) {
-                console.warn('Unable to save theme preference:', e);
-            }
-            updateChartsTheme();
-        });
-    } catch (e) {
-        console.warn('Theme system initialization failed:', e);
+// Enhanced theme management function
+function initializeThemeSystem() {
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    function setTheme(isDark) {
+        document.documentElement.classList.toggle('dark', isDark);
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        updateChartsTheme();
+        state.isDarkMode = isDark;
     }
+
+    function updateUIForTheme(isDark) {
+        // Update icons
+        const moonIcon = themeToggleBtn?.querySelector('.fa-moon');
+        const sunIcon = themeToggleBtn?.querySelector('.fa-sun');
+        if (moonIcon && sunIcon) {
+            moonIcon.classList.toggle('hidden', isDark);
+            sunIcon.classList.toggle('hidden', !isDark);
+        }
+
+        // Update chart colors and other theme-dependent elements
+        document.querySelectorAll('[data-theme-update]').forEach(element => {
+            element.classList.toggle('dark-theme', isDark);
+        });
+    }
+
+    // Initialize theme
+    const savedTheme = localStorage.getItem('theme');
+    const systemTheme = prefersDark.matches;
+    const isDark = savedTheme === 'dark' || (!savedTheme && systemTheme);
+    setTheme(isDark);
+
+    // Theme toggle handler
+    themeToggleBtn?.addEventListener('click', () => {
+        const isDark = !document.documentElement.classList.contains('dark');
+        setTheme(isDark);
+    });
+
+    // System theme change handler
+    prefersDark.addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) {
+            setTheme(e.matches);
+        }
+    });
 }
 
 // =============== 4. Event Listeners ===============
@@ -1044,47 +1109,108 @@ function initializeEventListeners() {
             toggleSidebar(false);
         }
     });
+
+    // Add category type change handler
+    document.getElementById('category-type')?.addEventListener('change', function(e) {
+        const categoryGroup = document.getElementById('category-group');
+        const category = document.getElementById('category');
+        
+        // Clear existing options
+        categoryGroup.innerHTML = '<option value="">Select Group</option>';
+        category.innerHTML = '<option value="">Select Category</option>';
+        
+        if (e.target.value) {
+            // Fetch category groups based on type
+            fetch(`/api/categories/${e.target.value}`)
+                .then(response => response.json())
+                .then(groups => {
+                    groups.forEach(group => {
+                        categoryGroup.add(new Option(group, group));
+                    });
+                })
+                .catch(error => console.error('Error loading categories:', error));
+        }
+    });
+
+    // Add category group change handler
+    document.getElementById('category-group')?.addEventListener('change', function(e) {
+        const categoryType = document.getElementById('category-type').value;
+        const category = document.getElementById('category');
+        
+        category.innerHTML = '<option value="">Select Category</option>';
+        
+        if (e.target.value) {
+            // Fetch categories based on type and group
+            fetch(`/api/categories/${categoryType}/${e.target.value}`)
+                .then(response => response.json())
+                .then(categories => {
+                    categories.forEach(cat => {
+                        category.add(new Option(cat, cat));
+                    });
+                })
+                .catch(error => console.error('Error loading categories:', error));
+        }
+    });
+
+    // Add form submit handlers with proper validation
+    document.getElementById('transaction-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        
+        try {
+            const response = await fetch('/api/transactions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.fromEntries(formData))
+            });
+
+            if (response.ok) {
+                showNotification('Transaction added successfully');
+                form.closest('.modal').classList.add('hidden');
+                form.reset();
+                await loadDashboardData();
+            } else {
+                throw new Error('Failed to add transaction');
+            }
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    });
+
+    // Add export functionality
+    document.getElementById('export-btn')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/export');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'finance_data.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } catch (error) {
+            showNotification('Export failed', 'error');
+        }
+    });
 }
 
 // =============== 5. Initialization ===============
 function initializeApp() {
-    // Add cache-busting query parameter
-    const version = new Date().getTime();
-    const preloadLinks = [
-        { rel: 'preconnect', href: 'https://cdn.jsdelivr.net' },
-        { rel: 'preload', href: `/static/tailwind.css?v=${version}`, as: 'style' },
-        { rel: 'preload', href: `/static/style.css?v=${version}`, as: 'style' },
-        { rel: 'preload', href: `/static/app.js?v=${version}`, as: 'script' }
-    ];
-
-    preloadLinks.forEach(link => {
-        const linkEl = document.createElement('link');
-        Object.entries(link).forEach(([key, value]) => linkEl[key] = value);
-        document.head.appendChild(linkEl);
-    });
-
+    // Remove preload links and simplify initialization
     document.addEventListener('DOMContentLoaded', () => {
         try {
-            handleThemeStorage();
+            // Initialize theme before any chart creation
+            initializeThemeSystem();
+            initializeModals();
+            initializeSidebar();
             initializeEventListeners();
-            
-            const loadDashboardWithRetry = async (retries = 3) => {
-                try {
-                    await loadDashboardData();
-                } catch (error) {
-                    if (retries > 0) {
-                        console.warn(`Retrying dashboard load... (${retries} attempts left)`);
-                        setTimeout(() => loadDashboardWithRetry(retries - 1), 1000);
-                    } else {
-                        console.error('Failed to load dashboard after retries:', error);
-                        showNotification('Error loading dashboard data', 'error');
-                    }
-                }
-            };
-
             loadDashboardWithRetry();
         } catch (e) {
             console.error('App initialization failed:', e);
+            showNotification('Error initializing application', 'error');
         }
     });
 }

@@ -29,7 +29,222 @@
     --dark-card-border: rgba(255, 255, 255, 0.1);
     --dark-card-bg: rgba(17, 24, 39, 0.7);
     --dark-hover-bg: rgba(55, 65, 81, 0.3);
+    /* Light theme */
+    --light-bg: #ffffff;
+    --light-surface: #f8fafc;
+    --light-text: #1a1a1a;
+    --light-text-secondary: #4b5563;
+    --light-border: #e5e7eb;
+    --light-hover: #f3f4f6;
+    
+    /* Dark theme */
+    --dark-bg: #111827;
+    --dark-surface: #1f2937;
+    --dark-text: #f3f4f6;
+    --dark-text-secondary: #9ca3af;
+    --dark-border: #374151;
+    --dark-hover: rgba(255, 255, 255, 0.05);
+    
+    /* Brand colors */
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
+
+/* Base styles */
+body {
+    background-color: var(--light-bg);
+    color: var(--light-text);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode */
+body.dark {
+    background-color: var(--dark-bg);
+    color: var(--dark-text);
+}
+
+/* Component themes */
+.card {
+    background-color: var(--light-surface);
+    border: 1px solid var(--light-border);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.3s ease;
+}
+
+.dark .card {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+/* Form elements */
+.input, .select, .textarea {
+    background-color: var(--light-surface);
+    border: 1px solid var(--light-border);
+    color: var(--light-text);
+    transition: all 0.2s ease;
+}
+
+.dark .input,
+.dark .select,
+.dark .textarea {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+    color: var(--dark-text);
+}
+
+/* Button themes */
+.btn {
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+}
+
+.dark .btn-primary:hover {
+    background-color: var(--primary-dark);
+}
+
+/* Chart themes */
+.chart-container {
+    background-color: var(--light-surface);
+    border: 1px solid var(--light-border);
+    transition: all 0.3s ease;
+}
+
+.dark .chart-container {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+/* Modal themes */
+.modal-content {
+    background-color: var(--light-surface);
+    border: 1px solid var(--light-border);
+    transition: all 0.3s ease;
+}
+
+.dark .modal-content {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+/* Table themes */
+.table {
+    background-color: var(--light-surface);
+}
+
+.dark .table {
+    background-color: var(--dark-surface);
+}
+
+.table th {
+    background-color: var(--light-hover);
+    color: var(--light-text-secondary);
+}
+
+.dark .table th {
+    background-color: var(--dark-hover);
+    color: var(--dark-text-secondary);
+}
+
+/* Notification themes */
+.notification {
+    background-color: var(--light-surface);
+    border: 1px solid var(--light-border);
+    box-shadow: var(--shadow-md);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.dark .notification {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+/* Progress bar themes */
+.progress-bar {
+    background-color: var(--light-hover);
+    overflow: hidden;
+}
+
+.dark .progress-bar {
+    background-color: var(--dark-hover);
+}
+
+.progress-value {
+    background-color: var(--primary);
+}
+
+/* Focus states */
+.focus-ring {
+    outline: none;
+    transition: box-shadow 0.2s ease;
+}
+
+.focus-ring:focus {
+    box-shadow: 0 0 0 2px var(--primary);
+}
+
+.dark .focus-ring:focus {
+    box-shadow: 0 0 0 2px var(--primary-dark);
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* Enhanced visibility */
+.dark .high-contrast {
+    color: white;
+}
+
+.light .high-contrast {
+    color: black;
+}
+
+/* ...existing code... */
+
+/* Add theme transition class */
+.theme-transition {
+    transition: background-color 0.3s ease,
+                border-color 0.3s ease,
+                color 0.3s ease,
+                box-shadow 0.3s ease;
+}
+
+/* Update existing component styles with theme transition */
+.metric-card,
+.chart-wrapper,
+.budget-item,
+.goal-card,
+.sidebar-nav-item {
+    @apply theme-transition;
+}
+
+/* Add data-theme attributes support */
+[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+[data-theme="light"] {
+    color-scheme: light;
+}
+
+/* ...rest of existing code... */
 
 /* Dark mode styles */
 .dark {
@@ -830,4 +1045,45 @@ input:focus, select:focus {
     background: linear-gradient(90deg, #ef4444, #f87171);
 }
 
-/* ...existing styles... */
+/* Theme transitions */
+.transition-theme {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+}
+
+/* Dark mode overrides */
+.dark .bg-white {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+}
+
+.dark .text-gray-500 {
+    color: var(--dark-text-secondary);
+}
+
+.dark .text-gray-700 {
+    color: var(--dark-text);
+}
+
+.dark .border-gray-200 {
+    border-color: var(--dark-border);
+}
+
+.dark .shadow {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Chart container dark mode */
+.dark .chart-container {
+    background-color: var(--dark-surface);
+    border: 1px solid var(--dark-border);
+}
+
+/* Card hover effects in dark mode */
+.dark .card-hover:hover {
+    background-color: var(--dark-hover);
+    transform: translateY(-2px);
+}
+
+
