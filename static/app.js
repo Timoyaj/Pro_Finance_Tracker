@@ -134,6 +134,12 @@ const state = {
     charts: {
         spending: null,
         category: null
+    },
+    budgets: {
+        currentPage: 1,
+        perPage: 6,
+        total: 0,
+        items: []
     }
 };
 
@@ -226,42 +232,39 @@ document.head.appendChild(style);
 // Data Loading Functions
 async function loadDashboardData() {
     try {
-        console.log('Starting dashboard data load...');
-
-        const [transactionsRes, analyticsRes, budgetsRes, goalsRes] = await Promise.all([
+        const [transactionsRes, analyticsRes, goalsRes] = await Promise.allSettled([
             fetch('/api/transactions'),
             fetch('/api/analytics'),
-            fetch('/api/budgets'),
             fetch('/api/savings-goals')
         ]);
 
-        const transactions = await transactionsRes.json();
-        const analytics = await analyticsRes.json();
+        // Handle individual request failures
+        const results = {
+            transactions: transactionsRes.status === 'fulfilled' ? await transactionsRes.value.json() : null,
+            analytics: analyticsRes.status === 'fulfilled' ? await analyticsRes.value.json() : null,
+            goals: goalsRes.status === 'fulfilled' ? await goalsRes.value.json() : null
+        };
 
-        if (transactionsRes.ok) {
-            updateTransactions(transactions);
+        if (results.transactions) {
+            state.transactions = results.transactions;
+            updateTransactions(results.transactions);
         }
 
-        if (analyticsRes.ok) {
-            state.analytics = analytics; // Store analytics data
-            updateMetrics(analytics);
-            updateCharts(analytics);
+        if (results.analytics) {
+            updateMetrics(results.analytics.summary);
+            updateCharts(results.analytics);
         }
 
-        if (budgetsRes.ok) {
-            const budgets = await budgetsRes.json();
-            updateBudgets(budgets);
+        if (results.goals) {
+            updateGoals(results.goals);
         }
 
-        if (goalsRes.ok) {
-            const goals = await goalsRes.json();
-            updateGoals(goals);
-        }
+        await loadBudgets();
 
     } catch (error) {
         console.error('Dashboard load error:', error);
-        showNotification('Error loading dashboard data: ' + error.message, 'error');
-        throw error; // Re-throw the error for retry logic
+        showNotification('Error loading dashboard data', 'error');
+        throw error; // Re-throw for retry mechanism
     }
 }
 
@@ -281,72 +284,126 @@ async function loadDashboardWithRetry(retries = 3, delay = 1000) {
     showNotification('Failed to load dashboard data after multiple retries.', 'error');
 }
 
-// Update Functions
-function updateTransactions(transactions) {
-    if (!transactions?.length) return;
-
-    const list = document.getElementById('transactions-list');
-    if (!list) return;
-
-    const fragment = document.createDocumentFragment();
-    const template = document.createElement('template');
-
-    const html = transactions
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 6)
-        .map(t => `
-            <div class="transaction-item flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-                <div class="flex items-center gap-3">
-                    <div class="transaction-icon ${t.amount > 0 ? 'income' : 'expense'}"></div>
-                    <div class="transaction-details">
-                        <h4 class="font-semibold">${t.description}</h4>
-                        <span class="text-sm text-gray-500">
-                            ${new Date(t.date).toLocaleDateString()} · ${t.category}
-                        </span>
-                    </div>
-                </div>
-                <span class="transaction-amount ${t.amount > 0 ? 'text-green-500' : 'text-red-500'}">
-                    ${formatCurrency(t.amount)}
-                </span>
-            </div>
-        `).join('');
-
-    batchDOMUpdates(() => {
-        template.innerHTML = html;
-        fragment.appendChild(template.content);
-        list.innerHTML = '';
-        list.appendChild(fragment);
-    });
+// Add new function to load budgets
+async function loadBudgets(page = 1) {
+    try {
+        const response = await fetch(`/api/budgets?page=${page}&per_page=${state.budgets.perPage}`);
+        if (!response.ok) throw new Error('Failed to fetch budgets');
+        
+        const data = await response.json();
+        
+        // Update state
+        state.budgets = {
+            ...state.budgets,
+            currentPage: data.current_page,
+            total: data.total,
+            totalPages: data.pages,
+            items: data.budgets,
+            hasNext: data.has_next,
+            hasPrev: data.has_prev
+        };
+        
+        updateBudgets();
+    } catch (error) {
+        console.error('Error loading budgets:', error);
+        showNotification('Failed to load budgets', 'error');
+    }
 }
 
-function updateMetrics(analytics) {
-    if (!analytics?.monthly_trends) {
-        setDefaultMetrics();
+// Update Functions
+function updateTransactions(transactions) {
+    const tableBody = document.getElementById('transactions-table');
+    const emptyMessage = document.getElementById('transactions-empty');
+    if (!tableBody || !emptyMessage) return;
+
+    if (!transactions.length) {
+        tableBody.innerHTML = '';
+        emptyMessage.classList.remove('hidden');
         return;
     }
 
-    const currentMonth = Object.keys(analytics.monthly_trends).pop();
-    const monthData = analytics.monthly_trends[currentMonth] || { income: 0, expenses: 0 };
+    emptyMessage.classList.add('hidden');
+    tableBody.innerHTML = transactions.map(t => {
+        const amount = parseFloat(t.amount);
+        const amountClass = amount >= 0 ? 'text-green-600' : 'text-red-600';
+        const formattedDate = new Date(t.date).toLocaleDateString();
 
-    const totalIncome = Number(monthData.income) || 0;
-    const totalExpenses = Number(monthData.expenses) || 0;
-    const balance = totalIncome - totalExpenses;
+        return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ${formattedDate}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${t.description}</div>
+                    ${t.notes ? `<div class="text-xs text-gray-500">${t.notes}</div>` : ''}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${t.category}</div>
+                    <div class="text-xs text-gray-500">${t.category_group}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm ${amountClass} font-medium">
+                    ${formatCurrency(Math.abs(amount))}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                    <button class="text-blue-600 hover:text-blue-900 mr-3 edit-transaction-btn" data-id="${t.id}">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="text-red-600 hover:text-red-900 delete-transaction-btn" data-id="${t.id}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 
-    updateMetricValue('total-balance', balance);
-    updateMetricValue('total-income', totalIncome);
-    updateMetricValue('total-expenses', totalExpenses);
+    // Add event listeners for transaction actions
+    addTransactionEventListeners();
+}
 
-    const prevMonth = Object.keys(analytics.monthly_trends)[Object.keys(analytics.monthly_trends).length - 2];
-    if (prevMonth) {
-        const prevData = analytics.monthly_trends[prevMonth] || { income: 0, expenses: 0 };
-        const prevBalance = (Number(prevData.income) || 0) - (Number(prevData.expenses) || 0);
-        const changePercent = prevBalance !== 0 ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100 : 0;
+function addTransactionEventListeners() {
+    document.querySelectorAll('.edit-transaction-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const transactionId = btn.dataset.id;
+            openTransactionEditModal(transactionId);
+        });
+    });
 
-        const balanceChange = document.getElementById('balance-change');
-        if (balanceChange) {
-            balanceChange.textContent = `${changePercent > 0 ? '+' : ''}${formatPercentage(changePercent)} from last month`;
-            balanceChange.className = `text-sm ${changePercent > 0 ? 'text-green-500' : 'text-red-500'}`;
-        }
+    document.querySelectorAll('.delete-transaction-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const transactionId = btn.dataset.id;
+            if (confirm('Are you sure you want to delete this transaction?')) {
+                deleteTransaction(transactionId);
+            }
+        });
+    });
+}
+
+function updateMetrics(summary) {
+    if (!summary) return;
+
+    // Update income
+    const monthlyIncome = document.getElementById('monthly-income');
+    if (monthlyIncome) {
+        monthlyIncome.textContent = formatCurrency(summary.income || 0);
+    }
+
+    // Update expenses
+    const monthlyExpenses = document.getElementById('monthly-expenses');
+    if (monthlyExpenses) {
+        monthlyExpenses.textContent = formatCurrency(summary.expenses || 0);
+    }
+
+    // Update savings rate
+    const savingsRate = document.getElementById('savings-rate');
+    if (savingsRate) {
+        savingsRate.textContent = formatPercentage(summary.savings_rate || 0);
+    }
+
+    // Update net worth (income - expenses)
+    const netWorth = document.getElementById('net-worth');
+    if (netWorth) {
+        const worth = (summary.income || 0) - (summary.expenses || 0);
+        netWorth.textContent = formatCurrency(worth);
     }
 }
 
@@ -393,38 +450,165 @@ function animateValue(element, start, end, duration) {
     requestAnimationFrame(update);
 }
 
-function updateBudgets(budgets) {
-    const budgetContainer = document.getElementById('budget-categories');
+function updateBudgets() {
+    const budgetContainer = document.getElementById('budget-cards');
+    const paginationContainer = document.getElementById('budget-pagination');
     if (!budgetContainer) return;
 
-    budgetContainer.innerHTML = budgets.map(budget => {
-        const percentage = (budget.spent / budget.limit * 100);
-        const progressClass = percentage >= 90 ? 'budget-danger' :
-                            percentage >= 75 ? 'budget-warning' :
-                            'budget-progress-bar';
-        const statusColor = percentage >= 90 ? 'text-red-500' :
-                          percentage >= 75 ? 'text-yellow-500' :
-                          'text-blue-500';
+    // Show empty state if no budgets
+    if (!state.budgets.items?.length) {
+        budgetContainer.innerHTML = `
+            <div class="col-span-full text-center py-8 text-gray-500">
+                No budgets set. Click "Set Budget" to create one.
+            </div>`;
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
 
+    // Render budget cards
+    budgetContainer.innerHTML = state.budgets.items.map(budget => {
+        const statusClasses = {
+            'good': 'bg-green-500',
+            'warning': 'bg-yellow-500',
+            'danger': 'bg-red-500'
+        };
+
+        const statusClass = statusClasses[budget.status] || statusClasses.good;
+        
         return `
-            <div class="budget-card bg-white p-4 rounded-lg shadow">
-                <div class="flex justify-between items-center mb-3">
-                    <h4 class="font-semibold text-gray-700">${budget.category}</h4>
-                    <span class="text-sm font-medium ${statusColor}">${percentage.toFixed(1)}%</span>
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100">${budget.category}</h4>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">${budget.category_group}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium ${budget.status === 'danger' ? 'text-red-500' : 'text-gray-500'}">
+                            ${formatCurrency(budget.current_usage)} / ${formatCurrency(budget.monthly_limit)}
+                        </p>
+                        <p class="text-xs text-gray-400">
+                            ${formatCurrency(budget.remaining)} remaining
+                        </p>
+                    </div>
                 </div>
-                <div class="flex justify-between text-sm text-gray-600 mb-2">
-                    <span class="formatted-value">${formatCurrency(budget.spent)}</span>
-                    <span class="formatted-value">of ${formatCurrency(budget.limit)}</span>
+                
+                <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full ${statusClass} transition-all duration-500"
+                         style="width: ${Math.min(budget.percentage_used, 100)}%">
+                    </div>
                 </div>
-                <div class="budget-progress">
-                    <div class="${progressClass}" style="width: ${percentage}%"></div>
+                
+                <div class="mt-2 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span>${budget.percentage_used.toFixed(1)}% used</span>
+                    <div class="space-x-2">
+                        <button class="edit-budget-btn hover:text-blue-500" data-id="${budget.id}">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="delete-budget-btn hover:text-red-500" data-id="${budget.id}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
-                <p class="text-sm text-gray-500 mt-2">
-                    ${getRemainingBudgetText(budget)}
-                </p>
             </div>
         `;
     }).join('');
+
+    // Update pagination
+    if (paginationContainer) {
+        paginationContainer.innerHTML = `
+            <div class="flex items-center justify-between mt-4">
+                <p class="text-sm text-gray-500">
+                    Showing ${((state.budgets.currentPage - 1) * state.budgets.perPage) + 1} to 
+                    ${Math.min(state.budgets.currentPage * state.budgets.perPage, state.budgets.total)} 
+                    of ${state.budgets.total} budgets
+                </p>
+                <div class="flex space-x-2">
+                    <button class="px-3 py-1 border rounded text-sm ${!state.budgets.hasPrev ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}"
+                            onclick="changeBudgetPage(${state.budgets.currentPage - 1})"
+                            ${!state.budgets.hasPrev ? 'disabled' : ''}>
+                        Previous
+                    </button>
+                    <button class="px-3 py-1 border rounded text-sm ${!state.budgets.hasNext ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}"
+                            onclick="changeBudgetPage(${state.budgets.currentPage + 1})"
+                            ${!state.budgets.hasNext ? 'disabled' : ''}>
+                        Next
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // Add event listeners for budget actions
+    addBudgetEventListeners();
+}
+
+// Add pagination change handler
+async function changeBudgetPage(page) {
+    if (page < 1 || page > state.budgets.totalPages) return;
+    await loadBudgets(page);
+}
+
+function addBudgetEventListeners() {
+    document.querySelectorAll('.edit-budget-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const budgetId = btn.dataset.id;
+            openBudgetEditModal(budgetId);
+        });
+    });
+
+    document.querySelectorAll('.delete-budget-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const budgetId = btn.dataset.id;
+            if (confirm('Are you sure you want to delete this budget?')) {
+                await deleteBudget(budgetId);
+            }
+        });
+    });
+}
+
+async function deleteBudget(budgetId) {
+    try {
+        const response = await fetch(`/api/budgets?id=${budgetId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete budget');
+        }
+        
+        showNotification('Budget deleted successfully');
+        loadDashboardData();
+    } catch (error) {
+        console.error('Error deleting budget:', error);
+        showNotification('Failed to delete budget', 'error');
+    }
+}
+
+async function openBudgetEditModal(budgetId) {
+    try {
+        const response = await fetch(`/api/budgets/${budgetId}`);
+        if (!response.ok) throw new Error('Failed to fetch budget details');
+        
+        const budget = await response.json();
+        const form = document.getElementById('budget-form');
+        
+        // Populate form fields
+        form.querySelector('[name="category_group"]').value = budget.category_group;
+        form.querySelector('[name="category"]').value = budget.category;
+        form.querySelector('[name="monthly_limit"]').value = budget.monthly_limit;
+        form.querySelector('[name="alert_threshold"]').value = budget.alert_threshold * 100;
+        
+        // Set form mode to edit
+        form.dataset.mode = 'edit';
+        form.dataset.budgetId = budgetId;
+        
+        openModal('budget-modal');
+    } catch (error) {
+        console.error('Error opening budget edit modal:', error);
+        showNotification('Failed to load budget details', 'error');
+    }
 }
 
 function getRemainingBudgetText(budget) {
@@ -468,26 +652,8 @@ function updateGoals(goals) {
 }
 
 // Chart Functions
-function updateCharts(analytics) {
-    if (!analytics) return;
-
-    const debouncedChartUpdate = debounce(() => {
-        requestIdleCallback(() => {
-            try {
-                updateSpendingTrendsChart(analytics);
-                updateCategoryDistributionChart(analytics);
-            } catch (error) {
-                console.error('Error updating charts:', error);
-                showNotification('Failed to update charts', 'error');
-            }
-        }, { timeout: 2000 });
-    }, 150);
-
-    debouncedChartUpdate();
-}
-
 function updateSpendingTrendsChart(analytics) {
-    const ctx1 = document.getElementById('spending-chart')?.getContext('2d');
+    const ctx1 = document.getElementById('spending-overview')?.getContext('2d');
     if (!ctx1) return;
 
     try {
@@ -495,152 +661,69 @@ function updateSpendingTrendsChart(analytics) {
             state.charts.spending.destroy();
         }
 
-        const months = Object.keys(analytics.monthly_trends || {});
-        const income = months.map(m => analytics.monthly_trends[m].income || 0);
-        const expenses = months.map(m => analytics.monthly_trends[m].expenses || 0);
-
-        const gradientIncome = ctx1.createLinearGradient(0, 0, 0, 400);
-        gradientIncome.addColorStop(0, 'rgba(16, 185, 129, 0.2)');
-        gradientIncome.addColorStop(1, 'rgba(16, 185, 129, 0)');
-
-        const gradientExpenses = ctx1.createLinearGradient(0, 0, 0, 400);
-        gradientExpenses.addColorStop(0, 'rgba(239, 68, 68, 0.2)');
-        gradientExpenses.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        const labels = Object.keys(analytics.monthly_trends || {});
+        const incomeData = labels.map(month => analytics.monthly_trends[month].income || 0);
+        const expenseData = labels.map(month => analytics.monthly_trends[month].expenses || 0);
 
         state.charts.spending = new Chart(ctx1, {
             type: 'line',
             data: {
-                labels: months,
+                labels: labels,
                 datasets: [
                     {
                         label: 'Income',
-                        data: income,
+                        data: incomeData,
                         borderColor: '#10b981',
-                        backgroundColor: gradientIncome,
-                        tension: 0.4,
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
                         fill: true,
-                        pointBackgroundColor: '#10b981',
-                        pointBorderColor: '#fff',
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#10b981',
-                        borderWidth: 3,
-                        pointRadius: 4,
-                        pointHoverRadius: 6
+                        tension: 0.4
                     },
                     {
                         label: 'Expenses',
-                        data: expenses,
+                        data: expenseData,
                         borderColor: '#ef4444',
-                        backgroundColor: gradientExpenses,
-                        tension: 0.4,
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
                         fill: true,
-                        pointBackgroundColor: '#ef4444',
-                        pointBorderColor: '#fff',
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#ef4444',
-                        borderWidth: 3,
-                        pointRadius: 4,
-                        pointHoverRadius: 6
+                        tension: 0.4
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                layout: {
-                    padding: {
-                        top: 20,
-                        right: 20,
-                        bottom: 20,
-                        left: 20
-                    }
-                },
                 interaction: {
                     intersect: false,
                     mode: 'index'
                 },
                 plugins: {
                     legend: {
-                        display: false
+                        display: true,
+                        position: 'bottom'
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        titleColor: '#000',
-                        bodyColor: '#666',
-                        bodySpacing: 4,
-                        padding: 12,
-                        borderColor: '#e5e7eb',
-                        borderWidth: 1,
-                        usePointStyle: true,
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                if (context.parsed.y !== null) {
-                                    label += new Intl.NumberFormat('en-US', {
-                                        style: 'currency',
-                                        currency: 'USD'
-                                    }).format(context.parsed.y);
-                                }
-                                return label;
-                            }
-                        }
+                        enabled: true,
+                        mode: 'index',
+                        intersect: false
                     }
                 },
                 scales: {
                     x: {
                         grid: {
                             display: false
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            },
-                            color: '#6b7280'
                         }
                     },
                     y: {
-                        grid: {
-                            borderDash: [2, 2],
-                            color: '#e5e7eb'
-                        },
+                        beginAtZero: true,
                         ticks: {
-                            font: {
-                                size: 12
-                            },
-                            color: '#6b7280',
-                            callback: function(value) {
-                                return new Intl.NumberFormat('en-US', {
-                                    style: 'currency',
-                                    currency: 'USD',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0
-                                }).format(value);
-                            }
+                            callback: value => formatCurrency(value)
                         }
                     }
                 }
             }
         });
-
-        const legendContainer = document.createElement('div');
-        legendContainer.className = 'chart-legend';
-        legendContainer.innerHTML = `
-            <div class="legend-item">
-                <div class="legend-dot" style="background: #10b981"></div>
-                <span>Income</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-dot" style="background: #ef4444"></div>
-                <span>Expenses</span>
-            </div>
-        `;
-        ctx1.canvas.parentNode.appendChild(legendContainer);
-
     } catch (error) {
         console.error('Error creating spending trends chart:', error);
+        showNotification('Failed to create spending chart', 'error');
     }
 }
 
@@ -737,6 +820,24 @@ function updateCategoryDistributionChart(analytics) {
     }
 }
 
+function updateCharts(analytics) {
+    if (!analytics) return;
+
+    const debouncedChartUpdate = debounce(() => {
+        requestIdleCallback(() => {
+            try {
+                updateSpendingTrendsChart(analytics);
+                updateCategoryDistributionChart(analytics);
+            } catch (error) {
+                console.error('Error updating charts:', error);
+                showNotification('Failed to update charts', 'error');
+            }
+        });
+    }, 250);
+
+    debouncedChartUpdate();
+}
+
 window.addEventListener('resize', debounce(() => {
     if (state.charts.spending) {
         state.charts.spending.resize();
@@ -747,55 +848,30 @@ window.addEventListener('resize', debounce(() => {
 }, 250));
 
 function updateChartsTheme() {
-    const isDark = document.documentElement.classList.contains('dark');
-    const theme = {
-        backgroundColor: isDark ? '#1f2937' : 'white',
-        textColor: isDark ? '#e5e7eb' : '#374151',
-        gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb',
-        tooltipBg: isDark ? 'rgba(17, 24, 39, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-        tooltipText: isDark ? '#e5e7eb' : '#000000'
-    };
+    try {
+        const isDark = document.documentElement.classList.contains('dark');
+        const theme = {
+            backgroundColor: isDark ? '#1f2937' : 'white',
+            textColor: isDark ? '#e5e7eb' : '#374151',
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb'
+        };
 
-    const chartOptions = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: theme.textColor,
-                    usePointStyle: true
-                }
-            },
-            tooltip: {
-                backgroundColor: theme.tooltipBg,
-                titleColor: theme.tooltipText,
-                bodyColor: theme.tooltipText,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb'
-            }
-        },
-        scales: {
-            x: {
-                grid: {
-                    color: theme.gridColor,
-                    drawBorder: false
-                },
-                ticks: { color: theme.textColor }
-            },
-            y: {
-                grid: {
-                    color: theme.gridColor,
-                    drawBorder: false
-                },
-                ticks: { color: theme.textColor }
-            }
+        // Update spending chart
+        if (state.charts.spending) {
+            state.charts.spending.options.scales.x.grid.color = theme.gridColor;
+            state.charts.spending.options.scales.y.grid.color = theme.gridColor;
+            state.charts.spending.options.scales.x.ticks.color = theme.textColor;
+            state.charts.spending.options.scales.y.ticks.color = theme.textColor;
+            state.charts.spending.update('none');
         }
-    };
 
-    if (state.charts.spending) {
-        state.charts.spending.options = { ...state.charts.spending.options, ...chartOptions };
-        state.charts.spending.update('none');
-    }
-    if (state.charts.category) {
-        state.charts.category.options = { ...state.charts.category.options, ...chartOptions };
-        state.charts.category.update('none');
+        // Update category chart
+        if (state.charts.category) {
+            state.charts.category.options.plugins.legend.labels.color = theme.textColor;
+            state.charts.category.update('none');
+        }
+    } catch (error) {
+        console.error('Error updating chart themes:', error);
     }
 }
 
@@ -1077,51 +1153,52 @@ function handleDateFilterChange(e) {
 async function handleCategoryTypeChange(e) {
     const categoryGroupSelect = document.getElementById('category-group');
     const categorySelect = document.getElementById('category');
-    
-    // Clear existing options
-    categoryGroupSelect.innerHTML = '<option value="">Select Group</option>';
-    categorySelect.innerHTML = '<option value="">Select Category</option>';
+    const type = e.target.value;
 
-    if (e.target.value) {
-        try {
-            const response = await fetch(`/api/categories/${e.target.value}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const groups = await response.json();
-            if (Array.isArray(groups)) {
-                groups.forEach(group => {
-                    const option = new Option(group, group);
-                    categoryGroupSelect.add(option);
-                });
-            }
-        } catch (error) {
-            console.error('Error loading category groups:', error);
-            showNotification('Failed to load category groups', 'error');
-        }
+    clearCategorySelects(categoryGroupSelect, categorySelect);
+
+    if (!type) return;
+
+    try {
+        const response = await fetch(`/api/categories/${type}`);
+        if (!response.ok) throw new Error('Failed to fetch categories');
+        const groups = await response.json();
+
+        Object.keys(groups).forEach(group => {
+            const option = new Option(group, group);
+            categoryGroupSelect.add(option);
+        });
+    } catch (error) {
+        console.error('Error loading category groups:', error);
+        showNotification('Failed to load category groups', 'error');
     }
 }
 
+function clearCategorySelects(...selects) {
+    selects.forEach(select => {
+        select.innerHTML = '';
+        select.add(new Option('Select...', ''));
+    });
+}
+
 async function handleCategoryGroupChange(e) {
-    const categoryType = document.getElementById('category-type').value;
+    const categoryTypeSelect = document.getElementById('category-type');
     const categorySelect = document.getElementById('category');
+    const type = categoryTypeSelect.value;
+    const group = e.target.value;
     
-    // Clear existing options
     categorySelect.innerHTML = '<option value="">Select Category</option>';
 
-    if (e.target.value && categoryType) {
+    if (type && group) {
         try {
-            const response = await fetch(`/api/categories/${categoryType}/${e.target.value}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            const response = await fetch(`/api/categories/${type}/${group}`);
+            if (!response.ok) throw new Error('Failed to fetch subcategories');
             const categories = await response.json();
-            if (Array.isArray(categories)) {
-                categories.forEach(category => {
-                    const option = new Option(category, category);
-                    categorySelect.add(option);
-                });
-            }
+            
+            categories.forEach(category => {
+                const option = new Option(category, category);
+                categorySelect.add(option);
+            });
         } catch (error) {
             console.error('Error loading categories:', error);
             showNotification('Failed to load categories', 'error');
@@ -1152,6 +1229,132 @@ async function handleExportAllData() {
     }
 }
 
+async function populateCategorySelects(type = '', group = '', category = '') {
+    const groupSelect = document.getElementById('category-group');
+    const categorySelect = document.getElementById('category');
+    const subcategorySelect = document.getElementById('subcategory');
+    
+    try {
+        // Reset selections
+        groupSelect.innerHTML = '<option value="">Select Group</option>';
+        categorySelect.innerHTML = '<option value="">Select Category</option>';
+        subcategorySelect.innerHTML = '<option value="">Select Subcategory</option>';
+        
+        if (!type) return;
+        
+        // Fetch category structure
+        const response = await fetch(`/api/categories/${type}`);
+        if (!response.ok) throw new Error('Failed to fetch categories');
+        const groups = await response.json();
+        
+        // Populate groups
+        Object.keys(groups).forEach(groupName => {
+            const option = new Option(groupName, groupName);
+            option.selected = groupName === group;
+            groupSelect.add(option);
+        });
+        
+        // If group is selected, populate categories
+        if (group && groups[group]) {
+            const categories = Object.keys(groups[group]);
+            categories.forEach(cat => {
+                const option = new Option(cat, cat);
+                option.selected = cat === category;
+                categorySelect.add(option);
+            });
+            
+            // If category is selected, populate subcategories
+            if (category && groups[group][category]) {
+                const subcategories = groups[group][category];
+                subcategories.forEach(subcat => {
+                    subcategorySelect.add(new Option(subcat, subcat));
+                });
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error populating categories:', error);
+        showNotification('Failed to load categories', 'error');
+    }
+}
+
+function initializeCategorySelects() {
+    const typeSelect = document.getElementById('category-type');
+    const groupSelect = document.getElementById('category-group');
+    const categorySelect = document.getElementById('category');
+    
+    typeSelect?.addEventListener('change', (e) => {
+        populateCategorySelects(e.target.value);
+    });
+    
+    groupSelect?.addEventListener('change', (e) => {
+        const type = typeSelect.value;
+        populateCategorySelects(type, e.target.value);
+    });
+    
+    categorySelect?.addEventListener('change', (e) => {
+        const type = typeSelect.value;
+        const group = groupSelect.value;
+        populateCategorySelects(type, group, e.target.value);
+    });
+}
+
+async function handleTransactionEdit(transactionId) {
+    try {
+        const response = await fetch(`/api/transactions/${transactionId}`);
+        if (!response.ok) throw new Error('Failed to fetch transaction');
+        const transaction = await response.json();
+        
+        // Populate form
+        const form = document.getElementById('transaction-form');
+        form.dataset.editId = transactionId;
+        
+        // Populate fields
+        ['description', 'amount', 'notes'].forEach(field => {
+            form[field].value = transaction[field] || '';
+        });
+        
+        // Handle categories
+        await populateCategorySelects(transaction.category_type, transaction.category_group);
+        document.getElementById('category-type').value = transaction.category_type;
+        document.getElementById('category-group').value = transaction.category_group;
+        document.getElementById('category').value = transaction.category;
+        
+        openModal('transaction-modal');
+        
+    } catch (error) {
+        console.error('Error editing transaction:', error);
+        showNotification('Failed to load transaction details', 'error');
+    }
+}
+
+function applyTransactionFilters() {
+    const filters = {
+        type: document.getElementById('transaction-filter').value,
+        date: document.getElementById('date-filter').value,
+        category: document.getElementById('category-filter')?.value
+    };
+    
+    const queryParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+        if (value && value !== 'all') queryParams.append(key, value);
+    });
+    
+    loadTransactions(queryParams);
+}
+
+async function loadTransactions(queryParams = new URLSearchParams()) {
+    try {
+        const response = await fetch(`/api/transactions?${queryParams}`);
+        if (!response.ok) throw new Error('Failed to fetch transactions');
+        const transactions = await response.json();
+        updateTransactions(transactions);
+    } catch (error) {
+        console.error('Error loading transactions:', error);
+        showNotification('Failed to load transactions', 'error');
+    }
+}
+
 // =============== 8. Initialization ===============
 function initializeApp() {
     document.addEventListener('DOMContentLoaded', () => {
@@ -1160,10 +1363,69 @@ function initializeApp() {
             initializeModals();
             initializeSidebar();
             initializeEventListeners();
+            initializeCategorySelects();
+            initializeBudgetCategorySelects(); // Add this line
             loadDashboardWithRetry();
         } catch (e) {
             console.error('App initialization failed:', e);
             showNotification('Error initializing application', 'error');
+        }
+    });
+}
+
+// Add this after the existing initialization functions
+function initializeBudgetCategorySelects() {
+    const groupSelect = document.querySelector('#budget-form [name="category_group"]');
+    const categorySelect = document.querySelector('#budget-form [name="category"]');
+    
+    if (!groupSelect || !categorySelect) return;
+
+    // Reset and populate category group on modal open
+    document.getElementById('set-budget-btn')?.addEventListener('click', async () => {
+        try {
+            groupSelect.innerHTML = '<option value="">Select Category Group</option>';
+            categorySelect.innerHTML = '<option value="">Select Category</option>';
+            
+            const response = await fetch('/api/categories/expense');
+            if (!response.ok) throw new Error('Failed to fetch category groups');
+            
+            const groups = await response.json();
+            Object.keys(groups).forEach(group => {
+                const option = new Option(group, group);
+                groupSelect.add(option);
+            });
+        } catch (error) {
+            console.error('Error loading budget categories:', error);
+            showNotification('Failed to load categories', 'error');
+        }
+    });
+
+    // Handle category group change
+    groupSelect.addEventListener('change', async (e) => {
+        const selectedGroup = e.target.value;
+        categorySelect.innerHTML = '<option value="">Select Category</option>';
+        
+        if (!selectedGroup) return;
+        
+        try {
+            const response = await fetch(`/api/categories/expense/${selectedGroup}`);
+            if (!response.ok) throw new Error('Failed to fetch categories');
+            
+            const categories = await response.json();
+            if (Array.isArray(categories)) {
+                categories.forEach(category => {
+                    const option = new Option(category, category);
+                    categorySelect.add(option);
+                });
+            } else {
+                Object.keys(categories).forEach(category => {
+                    const option = new Option(category, category);
+                    categorySelect.add(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading categories:', error);
+            showNotification('Failed to load categories', 'error');
         }
     });
 }

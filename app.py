@@ -18,13 +18,28 @@ db = SQLAlchemy(app)
 # Category Structure
 CATEGORY_STRUCTURE = {
     'income': {
-        'Regular Income': ['Salary/Wages', 'Business Income', 'Freelance Income'],
-        'Passive Income': ['Investments', 'Rental Income', 'Interest/Dividends'],
-        'Other Income': ['Gifts', 'Bonuses', 'Miscellaneous Income']
+        'Regular Income': {
+            'Salary/Wages': ['Full-time', 'Part-time', 'Contract'],
+            'Business Income': ['Sales', 'Services', 'Other'],
+            'Freelance Income': ['Projects', 'Consulting', 'Other']
+        },
+        'Passive Income': {
+            'Investments': ['Dividends', 'Interest', 'Capital Gains'],
+            'Rental Income': ['Residential', 'Commercial', 'Other'],
+            'Royalties': ['Books', 'Music', 'Patents']
+        }
     },
     'expense': {
-        'Housing & Utilities': ['Rent/Mortgage', 'Utilities', 'Maintenance'],
-        'Transportation': ['Fuel', 'Public Transit', 'Vehicle Expenses'],
+        'Housing & Utilities': {
+            'Housing': ['Rent', 'Mortgage', 'Property Tax'],
+            'Utilities': ['Electricity', 'Water', 'Gas', 'Internet'],
+            'Maintenance': ['Repairs', 'Insurance', 'HOA']
+        },
+        'Transportation': {
+            'Vehicle': ['Car Payment', 'Insurance', 'Maintenance'],
+            'Fuel': ['Gas', 'Charging', 'Other'],
+            'Public Transit': ['Bus', 'Train', 'Rideshare']
+        },
         'Living Expenses': ['Groceries', 'Healthcare', 'Personal Care'],
         'Lifestyle': ['Dining Out', 'Entertainment', 'Shopping'],
         'Bills & Insurance': ['Insurance', 'Phone/Internet', 'Subscriptions'],
@@ -80,14 +95,34 @@ class Budget(db.Model):
         if today.day < self.reset_day:
             month_start = (month_start - timedelta(days=32)).replace(day=self.reset_day)
 
+        # Only consider expense transactions for budget calculations
         total_spent = db.session.query(func.sum(Transaction.amount)).filter(
             Transaction.user_id == self.user_id,
+            Transaction.category_group == self.category_group,  # Added group check
             Transaction.category == self.category,
-            Transaction.date >= month_start,
-            Transaction.amount < 0
+            Transaction.category_type == 'expense',  # Added type check
+            Transaction.date >= month_start
         ).scalar() or 0
 
         return abs(total_spent)
+
+    def get_status(self):
+        current_usage = self.get_current_usage()
+        percentage_used = (current_usage / self.monthly_limit * 100) if self.monthly_limit > 0 else 0
+        
+        return {
+            'id': self.id,
+            'category_group': self.category_group,
+            'category': self.category,
+            'monthly_limit': self.monthly_limit,
+            'current_usage': current_usage,
+            'percentage_used': percentage_used,
+            'remaining': self.monthly_limit - current_usage,
+            'alert_threshold': self.alert_threshold,
+            'status': 'danger' if percentage_used >= 100 else 
+                     'warning' if percentage_used >= (self.alert_threshold * 100) else 
+                     'good'
+        }
 
 # Enhanced Savings Goal Model
 class SavingsGoal(db.Model):
@@ -129,18 +164,39 @@ def get_category_groups(category_type):
     """Get category groups for a specific type"""
     if category_type not in CATEGORY_STRUCTURE:
         return jsonify({'error': 'Invalid category type'}), 400
-    return jsonify(list(CATEGORY_STRUCTURE[category_type].keys()))
+    return jsonify(CATEGORY_STRUCTURE[category_type])
 
-# Route for specific categories by type and group
 @app.route('/api/categories/<category_type>/<category_group>')
 @handle_errors
 def get_category_details(category_type, category_group):
     """Get categories for a specific type and group"""
-    if category_type not in CATEGORY_STRUCTURE:
-        return jsonify({'error': 'Invalid category type'}), 400
-    if category_group not in CATEGORY_STRUCTURE[category_type]:
-        return jsonify({'error': 'Invalid category group'}), 400
-    return jsonify(CATEGORY_STRUCTURE[category_type][category_group])
+    try:
+        if category_type not in CATEGORY_STRUCTURE:
+            return jsonify({'error': 'Invalid category type'}), 400
+        if category_group not in CATEGORY_STRUCTURE[category_type]:
+            return jsonify({'error': 'Invalid category group'}), 400
+            
+        categories = CATEGORY_STRUCTURE[category_type][category_group]
+        return jsonify(categories)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting categories: {str(e)}'}), 500
+
+@app.route('/api/categories/<category_type>/<category_group>/<category>')
+@handle_errors
+def get_subcategories(category_type, category_group, category):
+    """Get subcategories for a specific category"""
+    try:
+        if (category_type not in CATEGORY_STRUCTURE or
+            category_group not in CATEGORY_STRUCTURE[category_type] or
+            category not in CATEGORY_STRUCTURE[category_type][category_group]):
+            return jsonify({'error': 'Invalid category path'}), 400
+            
+        subcategories = CATEGORY_STRUCTURE[category_type][category_group][category]
+        return jsonify(subcategories)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting subcategories: {str(e)}'}), 500
 
 @app.route('/api/transactions', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @handle_errors
@@ -244,6 +300,29 @@ def handle_transactions():
         'recurring_frequency': t.recurring_frequency
     } for t in transactions])
 
+@app.route('/api/transactions/<int:transaction_id>', methods=['GET'])
+@handle_errors
+def get_transaction(transaction_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    transaction = Transaction.query.get_or_404(transaction_id)
+    if transaction.user_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    return jsonify({
+        'id': transaction.id,
+        'date': transaction.date.strftime('%Y-%m-%d'),
+        'description': transaction.description,
+        'amount': transaction.amount,
+        'category_type': transaction.category_type,
+        'category_group': transaction.category_group,
+        'category': transaction.category,
+        'notes': transaction.notes,
+        'is_recurring': transaction.is_recurring,
+        'recurring_frequency': transaction.recurring_frequency
+    })
+
 @app.route('/api/budget-status')
 @handle_errors
 def get_budget_status():
@@ -251,76 +330,78 @@ def get_budget_status():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
 
-    budgets = Budget.query.filter_by(user_id=session['user_id']).all()
-    status = []
+    try:
+        budgets = Budget.query.filter_by(user_id=session['user_id']).all()
+        status = []
 
-    for budget in budgets:
-        current_usage = budget.get_current_usage()
-        percentage_used = (current_usage / budget.monthly_limit) * 100 if budget.monthly_limit > 0 else 0
-        
-        status.append({
-            'category_group': budget.category_group,
-            'category': budget.category,
-            'monthly_limit': budget.monthly_limit,
-            'current_usage': current_usage,
-            'percentage_used': percentage_used,
-            'status': 'danger' if percentage_used >= 100 else 
-                     'warning' if percentage_used >= budget.alert_threshold * 100 else 'good',
-            'remaining': budget.monthly_limit - current_usage,
-            'alert_threshold': budget.alert_threshold * 100
+        for budget in budgets:
+            current_usage = budget.get_current_usage()
+            percentage_used = (current_usage / budget.monthly_limit) * 100 if budget.monthly_limit > 0 else 0
+            
+            status.append({
+                'category': budget.category,
+                'category_group': budget.category_group,
+                'limit': budget.monthly_limit,
+                'spent': current_usage,
+                'percentage': percentage_used,
+                'remaining': budget.monthly_limit - current_usage,
+                'status': 'danger' if percentage_used >= 100 else 
+                         'warning' if percentage_used >= budget.alert_threshold * 100 else 'good'
+            })
+
+        return jsonify({
+            'budgets': status,
+            'last_updated': datetime.now().isoformat()
         })
 
-    return jsonify({
-        'budgets': status,
-        'last_updated': datetime.now().isoformat()
-    })
+    except Exception as e:
+        return jsonify({'error': f'Error getting budget status: {str(e)}'}), 500
 
 @app.route('/api/analytics')
 @handle_errors
 def get_analytics():
-    """Get comprehensive financial analytics"""
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Get date ranges
-    today = datetime.now()
-    month_start = today.replace(day=1)
-    year_start = today.replace(month=1, day=1)
-    
-    # Query all user transactions within relevant timeframes
-    transactions = Transaction.query.filter(
-        Transaction.user_id == session['user_id']
-    ).all()
+    try:
+        # Get date ranges
+        today = datetime.now()
+        month_start = today.replace(day=1)
+        six_months_ago = today - timedelta(days=180)
+        
+        # Query all transactions for analysis
+        transactions = Transaction.query.filter(
+            Transaction.user_id == session['user_id'],
+            Transaction.date >= six_months_ago
+        ).all()
 
-    # Calculate various metrics
-    monthly_summary = {
-        'income': sum(t.amount for t in transactions 
-                     if t.date >= month_start and t.category_type == 'income'),
-        'expenses': abs(sum(t.amount for t in transactions 
-                          if t.date >= month_start and t.category_type == 'expense')),
-        'savings_rate': 0  # Will be calculated below
-    }
-    
-    # Calculate savings rate
-    if monthly_summary['income'] > 0:
-        monthly_summary['savings_rate'] = ((monthly_summary['income'] - 
-                                          monthly_summary['expenses']) / 
-                                         monthly_summary['income']) * 100
+        # Calculate monthly summary
+        current_month_transactions = [t for t in transactions if t.date >= month_start]
+        monthly_income = sum(t.amount for t in current_month_transactions if t.category_type == 'income')
+        monthly_expenses = abs(sum(t.amount for t in current_month_transactions if t.category_type == 'expense'))
+        
+        # Calculate savings rate
+        savings_rate = 0
+        if monthly_income > 0:
+            savings_rate = ((monthly_income - monthly_expenses) / monthly_income) * 100
 
-    # Category breakdown
-    category_breakdown = {}
-    for t in transactions:
-        if t.date >= month_start:
-            key = t.category_group
-            if key not in category_breakdown:
-                category_breakdown[key] = 0
-            category_breakdown[key] += abs(t.amount)
+        summary = {
+            'income': monthly_income,
+            'expenses': monthly_expenses,
+            'savings_rate': savings_rate
+        }
 
-    # Monthly trends (last 6 months)
-    six_months_ago = today - timedelta(days=180)
-    monthly_trends = {}
-    for t in transactions:
-        if t.date >= six_months_ago:
+        # Calculate category breakdown for current month
+        category_breakdown = {}
+        for t in current_month_transactions:
+            if t.category_type == 'expense':  # Only track expenses in breakdown
+                if t.category_group not in category_breakdown:
+                    category_breakdown[t.category_group] = 0
+                category_breakdown[t.category_group] += abs(t.amount)
+
+        # Calculate monthly trends (last 6 months)
+        monthly_trends = {}
+        for t in transactions:
             month_key = t.date.strftime('%Y-%m')
             if month_key not in monthly_trends:
                 monthly_trends[month_key] = {'income': 0, 'expenses': 0}
@@ -329,14 +410,43 @@ def get_analytics():
             else:
                 monthly_trends[month_key]['expenses'] += abs(t.amount)
 
-    return jsonify({
-        'summary': monthly_summary,
-        'category_breakdown': category_breakdown,
-        'monthly_trends': monthly_trends,
-        'budgets': get_budget_status().json,
-        'last_updated': datetime.now().isoformat()
-    })
+        # Sort monthly trends by date
+        monthly_trends = dict(sorted(monthly_trends.items()))
 
+        return jsonify({
+            'summary': summary,
+            'category_breakdown': category_breakdown,
+            'monthly_trends': monthly_trends,
+            'last_updated': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Error calculating analytics: {str(e)}'}), 500
+
+# ...existing code...
+
+@app.route('/api/categories/expense/<category_group>/budget-categories')
+@handle_errors
+def get_budget_categories(category_group):
+    """Get available categories for budgeting from a specific group"""
+    try:
+        if category_group not in CATEGORY_STRUCTURE['expense']:
+            return jsonify({'error': 'Invalid category group'}), 400
+            
+        group_data = CATEGORY_STRUCTURE['expense'][category_group]
+        if isinstance(group_data, list):
+            # If the group directly contains categories
+            categories = group_data
+        else:
+            # If the group contains subcategories
+            categories = list(group_data.keys())
+            
+        return jsonify(categories)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting budget categories: {str(e)}'}), 500
+
+# Update the handle_budgets route to include category validation
 @app.route('/api/budgets', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @handle_errors
 def handle_budgets():
@@ -346,6 +456,33 @@ def handle_budgets():
     if request.method == 'POST':
         try:
             data = request.json
+            
+            # Validate category exists
+            category_group = data.get('category_group')
+            category = data.get('category')
+            
+            if not category_group or category_group not in CATEGORY_STRUCTURE['expense']:
+                return jsonify({'error': 'Invalid category group'}), 400
+                
+            group_data = CATEGORY_STRUCTURE['expense'][category_group]
+            valid_categories = (
+                group_data if isinstance(group_data, list)
+                else list(group_data.keys())
+            )
+            
+            if not category or category not in valid_categories:
+                return jsonify({'error': 'Invalid category'}), 400
+
+            # Check for existing budget
+            existing_budget = Budget.query.filter_by(
+                user_id=session['user_id'],
+                category_group=data['category_group'],
+                category=data['category']
+            ).first()
+
+            if existing_budget:
+                return jsonify({'error': 'Budget already exists for this category'}), 400
+
             budget = Budget(
                 category_group=data['category_group'],
                 category=data['category'],
@@ -354,11 +491,28 @@ def handle_budgets():
                 reset_day=int(data.get('reset_day', 1)),
                 user_id=session['user_id']
             )
+            
+            # Validate monthly limit
+            if budget.monthly_limit <= 0:
+                return jsonify({'error': 'Monthly limit must be greater than 0'}), 400
+
             db.session.add(budget)
             db.session.commit()
-            return jsonify({'message': 'Budget created successfully', 'id': budget.id})
+            
+            return jsonify({
+                'message': 'Budget created successfully',
+                'budget': budget.get_status()
+            })
+
         except (KeyError, ValueError) as e:
             return jsonify({'error': str(e)}), 400
+
+    elif request.method == 'GET':
+        budgets = Budget.query.filter_by(user_id=session['user_id']).all()
+        return jsonify({
+            'budgets': [budget.get_status() for budget in budgets],
+            'last_updated': datetime.now().isoformat()
+        })
 
     elif request.method == 'PUT':
         try:
@@ -396,6 +550,13 @@ def handle_budgets():
         'reset_day': b.reset_day,
         'current_usage': b.get_current_usage()
     } for b in budgets])
+
+def validate_category_path(type, group, category, subcategory):
+    """Validate that a category path exists in the CATEGORY_STRUCTURE"""
+    try:
+        return (subcategory in CATEGORY_STRUCTURE[type][group][category])
+    except (KeyError, TypeError):
+        return False
 
 @app.route('/api/savings-goals', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @handle_errors
@@ -551,6 +712,31 @@ def register():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+@app.route('/api/budgets', methods=['GET'])
+@handle_errors
+def get_budgets():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 6, type=int)  # 6 cards per page
+
+    # Get all budgets with pagination
+    pagination = Budget.query.filter_by(user_id=session['user_id']).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    return jsonify({
+        'budgets': [budget.get_status() for budget in pagination.items],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page,
+        'per_page': per_page,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev,
+        'last_updated': datetime.now().isoformat()
+    })
 
 if __name__ == '__main__':
     with app.app_context():

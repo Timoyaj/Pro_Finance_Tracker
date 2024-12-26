@@ -150,34 +150,100 @@
             </div>
         </div>
 
-        <!-- Budget Progress -->
+        <!-- Replace the existing Budget Progress section with this updated version -->
         <div class="bg-white rounded-lg shadow p-6 mb-6">
-            <h3 class="text-lg font-semibold mb-4">Budget Progress</h3>
-            <div class="h-80">
-                <canvas id="budget-progress"></canvas>
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Budget Progress</h3>
+                <div class="flex items-center space-x-4">
+                    <select id="budget-period" class="rounded-md border-gray-300 text-sm">
+                        <option value="current">Current Period</option>
+                        <option value="last">Last Period</option>
+                    </select>
+                    <button id="set-budget-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                        Set Budget
+                    </button>
+                </div>
+            </div>
+            <div id="budget-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Budget cards will be inserted here -->
+            </div>
+            <div id="budget-pagination" class="mt-4">
+                <!-- Pagination will be inserted here -->
             </div>
         </div>
 
-        <!-- Recent Transactions -->
+        <!-- Replace the Goals section with this enhanced version -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Savings Goals</h3>
+                <button id="add-goal-btn" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
+                    Add Goal
+                </button>
+            </div>
+            <div id="savings-goals" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Goals will be dynamically inserted here -->
+            </div>
+            <div id="goals-empty" class="hidden text-center text-gray-500 py-8">
+                No savings goals set. Click "Add Goal" to create one.
+            </div>
+        </div>
+
+        <!-- Replace the Transactions section with this enhanced version -->
         <div class="bg-white rounded-lg shadow">
             <div class="p-6 border-b">
-                <h3 class="text-lg font-semibold">Recent Transactions</h3>
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+                    <h3 class="text-lg font-semibold">Recent Transactions</h3>
+                    <div class="flex flex-wrap gap-4">
+                        <select id="transaction-filter" class="rounded-md border-gray-300 text-sm min-w-[120px]">
+                            <option value="all">All Types</option>
+                            <option value="income">Income</option>
+                            <option value="expense">Expenses</option>
+                        </select>
+                        <select id="category-filter" class="rounded-md border-gray-300 text-sm min-w-[120px]">
+                            <option value="">All Categories</option>
+                        </select>
+                        <select id="date-filter" class="rounded-md border-gray-300 text-sm min-w-[120px]">
+                            <option value="7-days">Last 7 Days</option>
+                            <option value="30-days">Last 30 Days</option>
+                            <option value="this-month">This Month</option>
+                            <option value="last-month">Last Month</option>
+                            <option value="all">All Time</option>
+                        </select>
+                    </div>
+                </div>
             </div>
+            
+            <!-- Enhanced transaction table -->
             <div class="overflow-x-auto">
                 <table class="w-full">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="transactions-table" class="divide-y divide-gray-200">
-                        <!-- Transactions will be inserted here -->
+                        <!-- Transactions will be dynamically inserted here -->
                     </tbody>
                 </table>
+            </div>
+            
+            <div id="transactions-empty" class="hidden p-6 text-center text-gray-500">
+                No transactions found for the selected filters
+            </div>
+            
+            <!-- Pagination -->
+            <div class="px-6 py-4 border-t flex items-center justify-between">
+                <div class="text-sm text-gray-500">
+                    Showing <span id="showing-start">0</span> to <span id="showing-end">0</span> of <span id="total-transactions">0</span> transactions
+                </div>
+                <div class="flex space-x-2">
+                    <button id="prev-page" class="px-3 py-1 border rounded text-sm disabled:opacity-50">Previous</button>
+                    <button id="next-page" class="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                </div>
             </div>
         </div>
     </main>
@@ -260,38 +326,62 @@
                     </button>
                 </div>
 
-                <!-- Modal Body -->
+                <!-- Updated Modal Body -->
                 <form id="budget-form" class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Category Group</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category Group</label>
                         <select name="category_group" required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">Select Category Group</option>
-                            {% for group in categories.expense.keys() %}
-                                <option value="{{ group }}">{{ group }}</option>
-                            {% endfor %}
                         </select>
                     </div>
+
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Category</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
                         <select name="category" required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">Select Category</option>
                         </select>
                     </div>
+
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Monthly Limit</label>
-                        <input type="number" name="monthly_limit" step="0.01" required
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Monthly Limit</label>
+                        <div class="mt-1 relative rounded-md shadow-sm">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 dark:text-gray-400 sm:text-sm">$</span>
+                            </div>
+                            <input type="number" name="monthly_limit" min="0" step="0.01" required
+                                   class="pl-7 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                   placeholder="0.00">
+                        </div>
                     </div>
+
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Alert Threshold (%)</label>
-                        <input type="number" name="alert_threshold" min="1" max="100" value="80"
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Alert Threshold (%)
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Get notified when spending reaches this percentage of the limit</span>
+                        </label>
+                        <input type="number" name="alert_threshold" min="1" max="100" value="80" required
+                               class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
-                    <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">
-                        Save Budget
-                    </button>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Reset Day
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Day of month when budget resets</span>
+                        </label>
+                        <input type="number" name="reset_day" min="1" max="31" value="1" required
+                               class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+
+                    <div class="flex items-center justify-end space-x-3 mt-6">
+                        <button type="button" class="modal-close px-4 py-2 border border-gray-300 rounded-md text-gray-700 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Save Budget
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
