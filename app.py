@@ -738,6 +738,19 @@ def get_budgets():
         'last_updated': datetime.now().isoformat()
     })
 
+@app.route('/api/budgets/<int:budget_id>', methods=['GET'])
+@handle_errors
+def get_budget(budget_id):
+    """Get a specific budget by ID"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    budget = Budget.query.get_or_404(budget_id)
+    if budget.user_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    return jsonify(budget.get_status())
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

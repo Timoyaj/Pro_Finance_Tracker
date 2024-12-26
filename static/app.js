@@ -1,3 +1,12 @@
+// Add to the top of app.js
+if (!('adoptedStyleSheets' in document)) {
+    window.adoptedStyleSheets = [];
+    Object.defineProperty(Document.prototype, 'adoptedStyleSheets', {
+        get() { return window.adoptedStyleSheets; },
+        set(sheets) { window.adoptedStyleSheets = sheets; }
+    });
+}
+
 // =============== 1. Error Handlers and Utilities ===============
 window.addEventListener('error', function(e) {
     console.error('Global error:', e.error);
@@ -1155,6 +1164,11 @@ async function handleCategoryTypeChange(e) {
     const categorySelect = document.getElementById('category');
     const type = e.target.value;
 
+    if (!categoryGroupSelect || !categorySelect) {
+        console.error('Required select elements not found');
+        return;
+    }
+
     clearCategorySelects(categoryGroupSelect, categorySelect);
 
     if (!type) return;
@@ -1184,25 +1198,36 @@ function clearCategorySelects(...selects) {
 async function handleCategoryGroupChange(e) {
     const categoryTypeSelect = document.getElementById('category-type');
     const categorySelect = document.getElementById('category');
-    const type = categoryTypeSelect.value;
+    const type = categoryTypeSelect?.value;
     const group = e.target.value;
+    
+    if (!categorySelect) {
+        console.error('Category select element not found');
+        return;
+    }
     
     categorySelect.innerHTML = '<option value="">Select Category</option>';
 
-    if (type && group) {
-        try {
-            const response = await fetch(`/api/categories/${type}/${group}`);
-            if (!response.ok) throw new Error('Failed to fetch subcategories');
-            const categories = await response.json();
-            
+    if (!type || !group) return;
+
+    try {
+        const response = await fetch(`/api/categories/${type}/${group}`);
+        if (!response.ok) throw new Error('Failed to fetch subcategories');
+        const categories = await response.json();
+        
+        // Handle both array and object responses
+        if (Array.isArray(categories)) {
             categories.forEach(category => {
-                const option = new Option(category, category);
-                categorySelect.add(option);
+                categorySelect.add(new Option(category, category));
             });
-        } catch (error) {
-            console.error('Error loading categories:', error);
-            showNotification('Failed to load categories', 'error');
+        } else if (typeof categories === 'object') {
+            Object.keys(categories).forEach(category => {
+                categorySelect.add(new Option(category, category));
+            });
         }
+    } catch (error) {
+        console.error('Error loading categories:', error);
+        showNotification('Failed to load categories', 'error');
     }
 }
 
@@ -1230,15 +1255,20 @@ async function handleExportAllData() {
 }
 
 async function populateCategorySelects(type = '', group = '', category = '') {
+    const typeSelect = document.getElementById('category-type');
     const groupSelect = document.getElementById('category-group');
     const categorySelect = document.getElementById('category');
-    const subcategorySelect = document.getElementById('subcategory');
+    
+    // Ensure all required elements exist
+    if (!groupSelect || !categorySelect) {
+        console.error('Required select elements not found');
+        return;
+    }
     
     try {
-        // Reset selections
+        // Reset selections with default option
         groupSelect.innerHTML = '<option value="">Select Group</option>';
         categorySelect.innerHTML = '<option value="">Select Category</option>';
-        subcategorySelect.innerHTML = '<option value="">Select Subcategory</option>';
         
         if (!type) return;
         
@@ -1256,18 +1286,20 @@ async function populateCategorySelects(type = '', group = '', category = '') {
         
         // If group is selected, populate categories
         if (group && groups[group]) {
-            const categories = Object.keys(groups[group]);
-            categories.forEach(cat => {
-                const option = new Option(cat, cat);
-                option.selected = cat === category;
-                categorySelect.add(option);
-            });
-            
-            // If category is selected, populate subcategories
-            if (category && groups[group][category]) {
-                const subcategories = groups[group][category];
-                subcategories.forEach(subcat => {
-                    subcategorySelect.add(new Option(subcat, subcat));
+            const categories = groups[group];
+            if (Array.isArray(categories)) {
+                // Handle direct category array
+                categories.forEach(cat => {
+                    const option = new Option(cat, cat);
+                    option.selected = cat === category;
+                    categorySelect.add(option);
+                });
+            } else if (typeof categories === 'object') {
+                // Handle nested category structure
+                Object.keys(categories).forEach(cat => {
+                    const option = new Option(cat, cat);
+                    option.selected = cat === category;
+                    categorySelect.add(option);
                 });
             }
         }
@@ -1283,20 +1315,24 @@ function initializeCategorySelects() {
     const groupSelect = document.getElementById('category-group');
     const categorySelect = document.getElementById('category');
     
-    typeSelect?.addEventListener('change', (e) => {
-        populateCategorySelects(e.target.value);
-    });
+    // Only add listeners if elements exist
+    if (typeSelect) {
+        typeSelect.addEventListener('change', handleCategoryTypeChange);
+    }
     
-    groupSelect?.addEventListener('change', (e) => {
-        const type = typeSelect.value;
-        populateCategorySelects(type, e.target.value);
-    });
+    if (groupSelect) {
+        groupSelect.addEventListener('change', handleCategoryGroupChange);
+    }
     
-    categorySelect?.addEventListener('change', (e) => {
-        const type = typeSelect.value;
-        const group = groupSelect.value;
-        populateCategorySelects(type, group, e.target.value);
-    });
+    if (categorySelect) {
+        categorySelect.addEventListener('change', () => {
+            const type = typeSelect?.value;
+            const group = groupSelect?.value;
+            if (type && group) {
+                populateCategorySelects(type, group, categorySelect.value);
+            }
+        });
+    }
 }
 
 async function handleTransactionEdit(transactionId) {
