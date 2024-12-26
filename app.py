@@ -115,11 +115,32 @@ def handle_errors(f):
 
 # Routes
 
+# Route for all categories
 @app.route('/api/categories')
 @handle_errors
 def get_categories():
     """Get all available categories"""
     return jsonify(CATEGORY_STRUCTURE)
+
+# Route for category groups by type
+@app.route('/api/categories/<category_type>')
+@handle_errors
+def get_category_groups(category_type):
+    """Get category groups for a specific type"""
+    if category_type not in CATEGORY_STRUCTURE:
+        return jsonify({'error': 'Invalid category type'}), 400
+    return jsonify(list(CATEGORY_STRUCTURE[category_type].keys()))
+
+# Route for specific categories by type and group
+@app.route('/api/categories/<category_type>/<category_group>')
+@handle_errors
+def get_category_details(category_type, category_group):
+    """Get categories for a specific type and group"""
+    if category_type not in CATEGORY_STRUCTURE:
+        return jsonify({'error': 'Invalid category type'}), 400
+    if category_group not in CATEGORY_STRUCTURE[category_type]:
+        return jsonify({'error': 'Invalid category group'}), 400
+    return jsonify(CATEGORY_STRUCTURE[category_type][category_group])
 
 @app.route('/api/transactions', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @handle_errors

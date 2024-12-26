@@ -21,7 +21,6 @@ function debounce(func, wait) {
     };
 }
 
-// Add this performance utility function
 function batchDOMUpdates(updates) {
     return new Promise(resolve => {
         requestIdleCallback(() => {
@@ -33,36 +32,75 @@ function batchDOMUpdates(updates) {
     });
 }
 
-// Add these functions after the utility functions section
+// =============== 2. Modal Helper Functions ===============
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        modal.dispatchEvent(new Event('hidden'));
+    }
+}
+
+// =============== 3. Initialize UI Components ===============
 function initializeModals() {
     const modals = document.querySelectorAll('.modal');
-    const modalOverlays = document.querySelectorAll('.modal-overlay');
-    const modalCloseButtons = document.querySelectorAll('.modal-close');
+    
+    modals.forEach(modal => {
+        // Get elements
+        const overlay = modal.querySelector('.modal-overlay');
+        const container = modal.querySelector('.modal-container');
+        const closeButtons = modal.querySelectorAll('.modal-close');
+        const form = modal.querySelector('form');
+
+        // Close on overlay click
+        overlay?.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeModal(modal.id);
+            }
+        });
+
+        // Prevent modal close when clicking modal content
+        container?.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // Close button handlers
+        closeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                closeModal(modal.id);
+            });
+        });
+
+        // Reset form on close
+        if (form) {
+            modal.addEventListener('hidden', () => {
+                form.reset();
+            });
+        }
+    });
 
     // Open modal triggers
     document.getElementById('add-transaction-btn')?.addEventListener('click', () => {
-        document.getElementById('transaction-modal')?.classList.remove('hidden');
+        openModal('transaction-modal');
     });
 
     document.getElementById('set-budget-btn')?.addEventListener('click', () => {
-        document.getElementById('budget-modal')?.classList.remove('hidden');
+        openModal('budget-modal');
     });
 
     document.getElementById('savings-goals-btn')?.addEventListener('click', () => {
-        document.getElementById('goal-modal')?.classList.remove('hidden');
-    });
-
-    // Close modal handlers
-    modalOverlays.forEach(overlay => {
-        overlay.addEventListener('click', () => {
-            modals.forEach(modal => modal.classList.add('hidden'));
-        });
-    });
-
-    modalCloseButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            button.closest('.modal').classList.add('hidden');
-        });
+        openModal('goal-modal');
     });
 }
 
@@ -82,7 +120,7 @@ function initializeSidebar() {
     });
 }
 
-// =============== 2. State and DOM Elements ===============
+// =============== 4. State and DOM Elements ===============
 const state = {
     transactions: [],
     filters: {
@@ -114,9 +152,8 @@ const elements = {
     analyticsContainer: document.getElementById('analytics-container')
 };
 
-// =============== 3. Core Functions ===============
+// =============== 5. Core Functions ===============
 // Utility Functions
-// Enhanced currency formatting with NaN handling
 function formatCurrency(amount) {
     if (typeof amount !== 'number' || isNaN(amount)) {
         return '$0.00';
@@ -129,7 +166,6 @@ function formatCurrency(amount) {
     }).format(amount);
 }
 
-// Enhanced percentage formatting
 function formatPercentage(value, decimals = 1) {
     if (typeof value !== 'number' || isNaN(value)) {
         return '0%';
@@ -145,14 +181,11 @@ function formatDate(dateString) {
     });
 }
 
-// Optimize notification system
 function showNotification(message, type = 'success') {
     const container = document.getElementById('notification-container');
     if (!container) return;
 
     const notification = document.createElement('div');
-    
-    // Use CSS transforms instead of layout properties
     notification.style.transform = 'translateY(100%)';
     notification.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white notification-slide ${
         type === 'success' ? 'bg-green-500' : 'bg-red-500'
@@ -161,13 +194,11 @@ function showNotification(message, type = 'success') {
 
     batchDOMUpdates(() => {
         container.appendChild(notification);
-        // Force reflow to be batched
         requestAnimationFrame(() => {
             notification.style.transform = 'translateY(0)';
         });
     });
-    
-    // Use requestIdleCallback for removal
+
     const timeoutId = setTimeout(() => {
         requestIdleCallback(() => {
             notification.style.transform = 'translateY(100%)';
@@ -177,14 +208,12 @@ function showNotification(message, type = 'success') {
         });
     }, 3000);
 
-    // Cleanup on page changes
     return () => {
         clearTimeout(timeoutId);
         notification.remove();
     };
 }
 
-// Add CSS class for notification animations
 const style = document.createElement('style');
 style.textContent = `
     .notification-slide {
@@ -198,22 +227,23 @@ document.head.appendChild(style);
 async function loadDashboardData() {
     try {
         console.log('Starting dashboard data load...');
-        
+
         const [transactionsRes, analyticsRes, budgetsRes, goalsRes] = await Promise.all([
             fetch('/api/transactions'),
             fetch('/api/analytics'),
             fetch('/api/budgets'),
-            fetch('/api/goals')
+            fetch('/api/savings-goals')
         ]);
 
         const transactions = await transactionsRes.json();
         const analytics = await analyticsRes.json();
-        
+
         if (transactionsRes.ok) {
             updateTransactions(transactions);
         }
-        
+
         if (analyticsRes.ok) {
+            state.analytics = analytics; // Store analytics data
             updateMetrics(analytics);
             updateCharts(analytics);
         }
@@ -231,22 +261,36 @@ async function loadDashboardData() {
     } catch (error) {
         console.error('Dashboard load error:', error);
         showNotification('Error loading dashboard data: ' + error.message, 'error');
+        throw error; // Re-throw the error for retry logic
     }
 }
 
+async function loadDashboardWithRetry(retries = 3, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await loadDashboardData();
+            return; // Success, exit the retry loop
+        } catch (error) {
+            console.error(`Dashboard load attempt ${i + 1} failed.`, error);
+            if (i < retries - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 1.5; // Exponential backoff
+            }
+        }
+    }
+    showNotification('Failed to load dashboard data after multiple retries.', 'error');
+}
+
 // Update Functions
-// Modify updateTransactions function
 function updateTransactions(transactions) {
     if (!transactions?.length) return;
 
     const list = document.getElementById('transactions-list');
     if (!list) return;
 
-    // Create document fragment for better performance
     const fragment = document.createDocumentFragment();
     const template = document.createElement('template');
-    
-    // Prepare the HTML string
+
     const html = transactions
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 6)
@@ -267,7 +311,6 @@ function updateTransactions(transactions) {
             </div>
         `).join('');
 
-    // Use batch updates
     batchDOMUpdates(() => {
         template.innerHTML = html;
         fragment.appendChild(template.content);
@@ -276,7 +319,6 @@ function updateTransactions(transactions) {
     });
 }
 
-// Update metrics with NaN handling
 function updateMetrics(analytics) {
     if (!analytics?.monthly_trends) {
         setDefaultMetrics();
@@ -290,18 +332,16 @@ function updateMetrics(analytics) {
     const totalExpenses = Number(monthData.expenses) || 0;
     const balance = totalIncome - totalExpenses;
 
-    // Safely update metrics with animations
     updateMetricValue('total-balance', balance);
     updateMetricValue('total-income', totalIncome);
     updateMetricValue('total-expenses', totalExpenses);
 
-    // Update balance change with safety checks
     const prevMonth = Object.keys(analytics.monthly_trends)[Object.keys(analytics.monthly_trends).length - 2];
     if (prevMonth) {
         const prevData = analytics.monthly_trends[prevMonth] || { income: 0, expenses: 0 };
         const prevBalance = (Number(prevData.income) || 0) - (Number(prevData.expenses) || 0);
         const changePercent = prevBalance !== 0 ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100 : 0;
-        
+
         const balanceChange = document.getElementById('balance-change');
         if (balanceChange) {
             balanceChange.textContent = `${changePercent > 0 ? '+' : ''}${formatPercentage(changePercent)} from last month`;
@@ -310,12 +350,11 @@ function updateMetrics(analytics) {
     }
 }
 
-// Helper function to set default metrics
 function setDefaultMetrics() {
     updateMetricValue('total-balance', 0);
     updateMetricValue('total-income', 0);
     updateMetricValue('total-expenses', 0);
-    
+
     const balanceChange = document.getElementById('balance-change');
     if (balanceChange) {
         balanceChange.textContent = 'No previous data';
@@ -323,25 +362,22 @@ function setDefaultMetrics() {
     }
 }
 
-// Animated metric value updates
 function updateMetricValue(elementId, value) {
     const element = document.getElementById(elementId);
     if (!element) return;
 
     const startValue = Number(element.getAttribute('data-value') || 0);
     const endValue = Number(value) || 0;
-    
-    // Update data attribute
+
     element.setAttribute('data-value', endValue);
 
-    // Animate the value change
     animateValue(element, startValue, endValue, 500);
 }
 
 function animateValue(element, start, end, duration) {
     const range = end - start;
     const startTime = performance.now();
-    
+
     function update(currentTime) {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
@@ -357,20 +393,19 @@ function animateValue(element, start, end, duration) {
     requestAnimationFrame(update);
 }
 
-// Update the budget formatting
 function updateBudgets(budgets) {
     const budgetContainer = document.getElementById('budget-categories');
     if (!budgetContainer) return;
 
     budgetContainer.innerHTML = budgets.map(budget => {
         const percentage = (budget.spent / budget.limit * 100);
-        const progressClass = percentage >= 90 ? 'budget-danger' : 
-                            percentage >= 75 ? 'budget-warning' : 
+        const progressClass = percentage >= 90 ? 'budget-danger' :
+                            percentage >= 75 ? 'budget-warning' :
                             'budget-progress-bar';
-        const statusColor = percentage >= 90 ? 'text-red-500' : 
-                          percentage >= 75 ? 'text-yellow-500' : 
+        const statusColor = percentage >= 90 ? 'text-red-500' :
+                          percentage >= 75 ? 'text-yellow-500' :
                           'text-blue-500';
-        
+
         return `
             <div class="budget-card bg-white p-4 rounded-lg shadow">
                 <div class="flex justify-between items-center mb-3">
@@ -392,18 +427,16 @@ function updateBudgets(budgets) {
     }).join('');
 }
 
-// Add helper function for remaining budget text
 function getRemainingBudgetText(budget) {
     const remaining = budget.limit - budget.spent;
     const isOverBudget = remaining < 0;
     const absoluteRemaining = Math.abs(remaining);
-    
+
     return isOverBudget
         ? `Over budget by ${formatCurrency(absoluteRemaining)}`
         : `${formatCurrency(absoluteRemaining)} remaining`;
 }
 
-// Update the goals formatting
 function updateGoals(goals) {
     const goalsContainer = document.getElementById('savings-goals');
     if (!goalsContainer) return;
@@ -411,7 +444,7 @@ function updateGoals(goals) {
     goalsContainer.innerHTML = goals.map(goal => {
         const percentage = (goal.current / goal.target * 100);
         const daysLeft = Math.ceil((new Date(goal.target_date) - new Date()) / (1000 * 60 * 60 * 24));
-        
+
         return `
             <div class="goal-card">
                 <div class="flex justify-between items-center mb-3">
@@ -435,11 +468,9 @@ function updateGoals(goals) {
 }
 
 // Chart Functions
-// Optimize chart updates
 function updateCharts(analytics) {
     if (!analytics) return;
 
-    // Debounce chart updates
     const debouncedChartUpdate = debounce(() => {
         requestIdleCallback(() => {
             try {
@@ -594,7 +625,6 @@ function updateSpendingTrendsChart(analytics) {
             }
         });
 
-        // Add custom legend
         const legendContainer = document.createElement('div');
         legendContainer.className = 'chart-legend';
         legendContainer.innerHTML = `
@@ -626,7 +656,6 @@ function updateCategoryDistributionChart(analytics) {
         const categories = Object.keys(analytics.category_breakdown || {});
         const amounts = Object.values(analytics.category_breakdown || {});
 
-        // Color palette for categories
         const categoryColors = [
             '#3b82f6', // Blue
             '#10b981', // Green
@@ -708,7 +737,6 @@ function updateCategoryDistributionChart(analytics) {
     }
 }
 
-// Add window resize handler
 window.addEventListener('resize', debounce(() => {
     if (state.charts.spending) {
         state.charts.spending.resize();
@@ -718,7 +746,6 @@ window.addEventListener('resize', debounce(() => {
     }
 }, 250));
 
-// Enhanced chart theme handling
 function updateChartsTheme() {
     const isDark = document.documentElement.classList.contains('dark');
     const theme = {
@@ -772,11 +799,10 @@ function updateChartsTheme() {
     }
 }
 
-// Enhanced theme management function
 function initializeThemeSystem() {
     const themeToggleBtn = document.getElementById('theme-toggle-btn');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-    
+
     function setTheme(isDark) {
         document.documentElement.classList.toggle('dark', isDark);
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
@@ -785,7 +811,6 @@ function initializeThemeSystem() {
     }
 
     function updateUIForTheme(isDark) {
-        // Update icons
         const moonIcon = themeToggleBtn?.querySelector('.fa-moon');
         const sunIcon = themeToggleBtn?.querySelector('.fa-sun');
         if (moonIcon && sunIcon) {
@@ -793,25 +818,21 @@ function initializeThemeSystem() {
             sunIcon.classList.toggle('hidden', !isDark);
         }
 
-        // Update chart colors and other theme-dependent elements
         document.querySelectorAll('[data-theme-update]').forEach(element => {
             element.classList.toggle('dark-theme', isDark);
         });
     }
 
-    // Initialize theme
     const savedTheme = localStorage.getItem('theme');
     const systemTheme = prefersDark.matches;
     const isDark = savedTheme === 'dark' || (!savedTheme && systemTheme);
     setTheme(isDark);
 
-    // Theme toggle handler
     themeToggleBtn?.addEventListener('click', () => {
         const isDark = !document.documentElement.classList.contains('dark');
         setTheme(isDark);
     });
 
-    // System theme change handler
     prefersDark.addEventListener('change', (e) => {
         if (!localStorage.getItem('theme')) {
             setTheme(e.matches);
@@ -819,77 +840,11 @@ function initializeThemeSystem() {
     });
 }
 
-// =============== 4. Event Listeners ===============
-// Optimize event listeners
+// =============== 6. Event Listeners ===============
 function initializeEventListeners() {
-    // Transaction Modal Events
-    elements.addTransactionBtn?.addEventListener('click', () => {
-        elements.transactionModal?.classList.remove('hidden');
-    });
-
-    elements.cancelTransactionBtn?.addEventListener('click', () => {
-        elements.transactionModal?.classList.add('hidden');
-        elements.transactionForm?.reset();
-    });
-
-    // Form Submissions
-    elements.transactionForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(elements.transactionForm);
-        const data = {
-            description: formData.get('description'),
-            amount: parseFloat(formData.get('amount')),
-            category: formData.get('category'),
-            date: new Date().toISOString().split('T')[0]
-        };
-
-        try {
-            const response = await fetch('/api/transactions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                showNotification('Transaction added successfully', 'success');
-                elements.transactionModal?.classList.add('hidden');
-                elements.transactionForm?.reset();
-                await loadDashboardData();
-            } else {
-                throw new Error('Failed to add transaction');
-            }
-        } catch (error) {
-            console.error('Transaction error:', error);
-            showNotification(error.message, 'error');
-        }
-    });
-
-    // Theme Toggle
-    elements.themeToggle?.addEventListener('click', () => {
-        state.isDarkMode = !state.isDarkMode;
-        document.body.classList.toggle('dark', state.isDarkMode);
-        localStorage.setItem('theme', state.isDarkMode ? 'dark' : 'light');
-    });
-
-    // Other event listeners...
-    elements.filterForm?.addEventListener('submit', (e) => {
-        e.preventDefault();
-        state.filters = {
-            category: elements.filterForm.category.value,
-            dateFrom: elements.filterForm.dateFrom.value,
-            dateTo: elements.filterForm.dateTo.value
-        };
-        loadDashboardData();
-    });
-
+    // User Menu
     elements.userMenu?.addEventListener('click', () => {
         elements.userDropdown?.classList.toggle('hidden');
-    });
-
-    document.getElementById('user-menu')?.addEventListener('click', () => {
-        document.getElementById('user-dropdown')?.classList.toggle('hidden');
     });
 
     document.addEventListener('click', (e) => {
@@ -900,116 +855,10 @@ function initializeEventListeners() {
         }
     });
 
-    document.getElementById('add-transaction-btn')?.addEventListener('click', () => {
-        document.getElementById('transaction-modal')?.classList.remove('hidden');
-    });
-
-    document.getElementById('cancel-transaction')?.addEventListener('click', () => {
-        document.getElementById('transaction-modal')?.classList.add('hidden');
-        document.getElementById('transaction-form')?.reset();
-    });
-
-    document.getElementById('transaction-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
-        const data = {
-            description: formData.get('description'),
-            amount: parseFloat(formData.get('amount')),
-            category: formData.get('category'),
-            date: new Date().toISOString().split('T')[0]
-        };
-
-        try {
-            const response = await fetch('/api/transactions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                showNotification('Transaction added successfully');
-                document.getElementById('transaction-modal')?.classList.add('hidden');
-                form.reset();
-                await loadDashboardData();
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to add transaction');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showNotification(error.message, 'error');
-        }
-    });
-
-    document.getElementById('budget-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
-        const data = {
-            category: formData.get('category'),
-            limit: parseFloat(formData.get('limit'))
-        };
-
-        try {
-            const response = await fetch('/api/budgets', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                showNotification('Budget limit set successfully');
-                document.getElementById('budget-modal')?.classList.add('hidden');
-                form.reset();
-                await loadDashboardData();
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to set budget limit');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showNotification(error.message, 'error');
-        }
-    });
-
-    document.getElementById('goal-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
-        const data = {
-            name: formData.get('goal-name'),
-            target: parseFloat(formData.get('target-amount')),
-            target_date: formData.get('target-date')
-        };
-
-        try {
-            const response = await fetch('/api/goals', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                showNotification('Savings goal added successfully');
-                document.getElementById('goal-modal')?.classList.add('hidden');
-                form.reset();
-                await loadDashboardData();
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to add savings goal');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showNotification(error.message, 'error');
-        }
-    });
+    // Form Submissions with improved error handling
+    document.getElementById('transaction-form')?.addEventListener('submit', handleTransactionFormSubmit);
+    document.getElementById('budget-form')?.addEventListener('submit', handleBudgetFormSubmit);
+    document.getElementById('goal-form')?.addEventListener('submit', handleGoalFormSubmit);
 
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
         document.body.classList.toggle('dark');
@@ -1018,56 +867,22 @@ function initializeEventListeners() {
         updateChartsTheme();
     });
 
-    function updateChartPeriod(period) {
-        state.chartPeriod = period;
-        updateCharts(state.analytics);
-    }
+    document.getElementById('export-transactions')?.addEventListener('click', handleExportTransactions);
 
-    document.getElementById('export-transactions')?.addEventListener('click', async () => {
-        try {
-            const response = await fetch('/api/export/transactions');
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'transactions.csv';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                a.remove();
-            } else {
-                throw new Error('Failed to export transactions');
-            }
-        } catch (error) {
-            console.error('Export error:', error);
-            showNotification('Failed to export transactions', 'error');
-        }
-    });
+    // Filter changes
+    document.getElementById('category-filter')?.addEventListener('change', debounce(handleCategoryFilterChange, 250));
+    document.getElementById('date-filter')?.addEventListener('change', handleDateFilterChange);
 
-    // Debounce filter changes
-    const debouncedFilterUpdate = debounce((e) => {
-        state.filters.category = e.target.value;
-        updateTransactions(state.transactions);
-    }, 250);
-
-    document.getElementById('category-filter')?.addEventListener('change', debouncedFilterUpdate);
-
-    document.getElementById('date-filter')?.addEventListener('change', (e) => {
-        state.filters.dateRange = e.target.value;
-        updateTransactions(state.transactions);
-    });
-
+    // Sidebar toggle
     document.getElementById('mobile-menu-button')?.addEventListener('click', () => {
         document.getElementById('sidebar')?.classList.toggle('-translate-x-full');
     });
 
-    const modals = ['transaction-modal', 'budget-modal', 'goal-modal'];
-    modals.forEach(modalId => {
-        const modal = document.getElementById(modalId);
-        modal?.addEventListener('click', (e) => {
+    // Close modal when clicking outside
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
             if (e.target === modal) {
-                modal.classList.add('hidden');
+                closeModal(modal.id);
                 const form = modal.querySelector('form');
                 form?.reset();
             }
@@ -1096,92 +911,228 @@ function initializeEventListeners() {
     mobileMenuButton?.addEventListener('click', () => toggleSidebar(true));
     sidebarOverlay?.addEventListener('click', () => toggleSidebar(false));
 
-    // Close sidebar on screen resize if in mobile view
     window.addEventListener('resize', debounce(() => {
         if (window.innerWidth > 1024 && sidebar?.classList.contains('active')) {
             toggleSidebar(false);
         }
     }, 250));
 
-    // Handle escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && sidebar?.classList.contains('active')) {
             toggleSidebar(false);
         }
     });
 
-    // Add category type change handler
-    document.getElementById('category-type')?.addEventListener('change', function(e) {
-        const categoryGroup = document.getElementById('category-group');
-        const category = document.getElementById('category');
-        
-        // Clear existing options
-        categoryGroup.innerHTML = '<option value="">Select Group</option>';
-        category.innerHTML = '<option value="">Select Category</option>';
-        
-        if (e.target.value) {
-            // Fetch category groups based on type
-            fetch(`/api/categories/${e.target.value}`)
-                .then(response => response.json())
-                .then(groups => {
-                    groups.forEach(group => {
-                        categoryGroup.add(new Option(group, group));
-                    });
-                })
-                .catch(error => console.error('Error loading categories:', error));
-        }
-    });
+    // Category type and group change handlers
+    document.getElementById('category-type')?.addEventListener('change', handleCategoryTypeChange);
+    document.getElementById('category-group')?.addEventListener('change', handleCategoryGroupChange);
 
-    // Add category group change handler
-    document.getElementById('category-group')?.addEventListener('change', function(e) {
-        const categoryType = document.getElementById('category-type').value;
-        const category = document.getElementById('category');
-        
-        category.innerHTML = '<option value="">Select Category</option>';
-        
-        if (e.target.value) {
-            // Fetch categories based on type and group
-            fetch(`/api/categories/${categoryType}/${e.target.value}`)
-                .then(response => response.json())
-                .then(categories => {
-                    categories.forEach(cat => {
-                        category.add(new Option(cat, cat));
-                    });
-                })
-                .catch(error => console.error('Error loading categories:', error));
-        }
-    });
+    // Export all data
+    document.getElementById('export-btn')?.addEventListener('click', handleExportAllData);
+}
 
-    // Add form submit handlers with proper validation
-    document.getElementById('transaction-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
-        
+// =============== 7. Event Handler Functions ===============
+async function handleTransactionFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.fromEntries(formData))
+        });
+
+        if (response.ok) {
+            showNotification('Transaction added successfully');
+            form.closest('.modal').classList.add('hidden');
+            form.reset();
+            await loadDashboardData();
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to add transaction');
+        }
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+async function handleBudgetFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('/api/budgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.fromEntries(formData))
+        });
+
+        if (response.ok) {
+            showNotification('Budget updated successfully');
+            form.closest('.modal').classList.add('hidden');
+            form.reset();
+            await loadDashboardData();
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to update budget');
+        }
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+async function handleGoalFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('/api/savings-goals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.fromEntries(formData))
+        });
+
+        if (response.ok) {
+            showNotification('Goal added successfully');
+            form.closest('.modal').classList.add('hidden');
+            form.reset();
+            await loadDashboardData();
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to add goal');
+        }
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+async function handleExportTransactions() {
+    try {
+        const response = await fetch('/api/export/transactions');
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transactions.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            showNotification('Transactions exported successfully');
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to export transactions');
+        }
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+function handleCategoryFilterChange(e) {
+    state.filters.category = e.target.value;
+    // Assuming you have access to all transactions in `state.transactions`
+    const filteredTransactions = state.transactions.filter(transaction =>
+        state.filters.category === '' || transaction.category === state.filters.category
+    );
+    updateTransactions(filteredTransactions);
+}
+
+function handleDateFilterChange(e) {
+    const selectedRange = e.target.value;
+    const today = new Date();
+    let startDate;
+
+    switch (selectedRange) {
+        case '7-days':
+            startDate = new Date(today);
+            startDate.setDate(today.getDate() - 7);
+            break;
+        case '30-days':
+            startDate = new Date(today);
+            startDate.setDate(today.getDate() - 30);
+            break;
+        case 'this-month':
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            break;
+        case 'last-month':
+            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            break;
+        default:
+            startDate = null;
+            break;
+    }
+
+    let filteredTransactions = state.transactions;
+    if (startDate) {
+        filteredTransactions = state.transactions.filter(transaction => new Date(transaction.date) >= startDate);
+    }
+    updateTransactions(filteredTransactions);
+}
+
+async function handleCategoryTypeChange(e) {
+    const categoryGroupSelect = document.getElementById('category-group');
+    const categorySelect = document.getElementById('category');
+    
+    // Clear existing options
+    categoryGroupSelect.innerHTML = '<option value="">Select Group</option>';
+    categorySelect.innerHTML = '<option value="">Select Category</option>';
+
+    if (e.target.value) {
         try {
-            const response = await fetch('/api/transactions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(Object.fromEntries(formData))
-            });
-
-            if (response.ok) {
-                showNotification('Transaction added successfully');
-                form.closest('.modal').classList.add('hidden');
-                form.reset();
-                await loadDashboardData();
-            } else {
-                throw new Error('Failed to add transaction');
+            const response = await fetch(`/api/categories/${e.target.value}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const groups = await response.json();
+            if (Array.isArray(groups)) {
+                groups.forEach(group => {
+                    const option = new Option(group, group);
+                    categoryGroupSelect.add(option);
+                });
             }
         } catch (error) {
-            showNotification(error.message, 'error');
+            console.error('Error loading category groups:', error);
+            showNotification('Failed to load category groups', 'error');
         }
-    });
+    }
+}
 
-    // Add export functionality
-    document.getElementById('export-btn')?.addEventListener('click', async () => {
+async function handleCategoryGroupChange(e) {
+    const categoryType = document.getElementById('category-type').value;
+    const categorySelect = document.getElementById('category');
+    
+    // Clear existing options
+    categorySelect.innerHTML = '<option value="">Select Category</option>';
+
+    if (e.target.value && categoryType) {
         try {
-            const response = await fetch('/api/export');
+            const response = await fetch(`/api/categories/${categoryType}/${e.target.value}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const categories = await response.json();
+            if (Array.isArray(categories)) {
+                categories.forEach(category => {
+                    const option = new Option(category, category);
+                    categorySelect.add(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading categories:', error);
+            showNotification('Failed to load categories', 'error');
+        }
+    }
+}
+
+async function handleExportAllData() {
+    try {
+        const response = await fetch('/api/export');
+        if (response.ok) {
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1191,18 +1142,20 @@ function initializeEventListeners() {
             a.click();
             window.URL.revokeObjectURL(url);
             a.remove();
-        } catch (error) {
-            showNotification('Export failed', 'error');
+            showNotification('All data exported successfully');
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to export data');
         }
-    });
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
 }
 
-// =============== 5. Initialization ===============
+// =============== 8. Initialization ===============
 function initializeApp() {
-    // Remove preload links and simplify initialization
     document.addEventListener('DOMContentLoaded', () => {
         try {
-            // Initialize theme before any chart creation
             initializeThemeSystem();
             initializeModals();
             initializeSidebar();
