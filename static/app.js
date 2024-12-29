@@ -632,32 +632,110 @@ function getRemainingBudgetText(budget) {
 
 function updateGoals(goals) {
     const goalsContainer = document.getElementById('savings-goals');
+    const emptyMessage = document.getElementById('goals-empty');
+    
     if (!goalsContainer) return;
 
+    if (!goals?.length) {
+        goalsContainer.innerHTML = '';
+        emptyMessage?.classList.remove('hidden');
+        return;
+    }
+
+    emptyMessage?.classList.add('hidden');
+    
     goalsContainer.innerHTML = goals.map(goal => {
-        const percentage = (goal.current / goal.target * 100);
-        const daysLeft = Math.ceil((new Date(goal.target_date) - new Date()) / (1000 * 60 * 60 * 24));
+        const statusClass = {
+            completed: 'bg-green-500',
+            on_track: 'bg-blue-500',
+            at_risk: 'bg-yellow-500',
+            behind: 'bg-red-500'
+        };
+
+        const statusText = {
+            completed: 'Completed',
+            on_track: 'On Track',
+            at_risk: 'At Risk',
+            behind: 'Behind'
+        };
+
+        // Determine status
+        let currentStatus = 'behind';
+        if (goal.status.completed) currentStatus = 'completed';
+        else if (goal.status.on_track) currentStatus = 'on_track';
+        else if (goal.status.at_risk) currentStatus = 'at_risk';
 
         return `
-            <div class="goal-card">
-                <div class="flex justify-between items-center mb-3">
-                    <h4 class="font-semibold text-gray-700">${goal.name}</h4>
-                    <span class="text-sm font-medium text-purple-500">${percentage.toFixed(1)}%</span>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <h4 class="font-semibold text-gray-900 dark:text-white">${goal.name}</h4>
+                        <p class="text-sm text-gray-500">${goal.category}</p>
+                    </div>
+                    <span class="px-2 py-1 text-xs rounded-full ${statusClass[currentStatus]} text-white">
+                        ${statusText[currentStatus]}
+                    </span>
                 </div>
-                <div class="flex justify-between text-sm text-gray-600">
-                    <span class="formatted-value">${formatCurrency(goal.current)}</span>
-                    <span class="formatted-value">of ${formatCurrency(goal.target)}</span>
+                
+                <div class="space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span>${formatCurrency(goal.current_amount)}</span>
+                        <span>of ${formatCurrency(goal.target_amount)}</span>
+                    </div>
+                    
+                    <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full transition-all duration-500 ${statusClass[currentStatus]}"
+                             style="width: ${goal.progress}%">
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>${goal.progress.toFixed(1)}% Complete</span>
+                        <span>${goal.days_left} days left</span>
+                    </div>
                 </div>
-                <div class="goal-progress">
-                    <div class="goal-progress-bar" style="width: ${percentage}%"></div>
+                
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <span>Monthly needed:</span>
+                        <span>${formatCurrency(goal.monthly_needed)}</span>
+                    </div>
+                    ${goal.status.completed ? '' : `
+                        <button class="mt-2 w-full px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 contribute-btn"
+                                data-goal-id="${goal.id}">
+                            Add Contribution
+                        </button>
+                    `}
                 </div>
-                <p class="text-sm text-gray-500 mt-2">
-                    ${daysLeft > 0 ? `${daysLeft} days left` : 'Goal deadline passed'} •
-                    Target: ${formatDate(goal.target_date)}
-                </p>
             </div>
         `;
     }).join('');
+
+    // Add contribution button handlers
+    document.querySelectorAll('.contribute-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openContributionModal(btn.dataset.goalId);
+        });
+    });
+}
+
+function openContributionModal(goalId) {
+    // Modify transaction modal for contribution
+    const modal = document.getElementById('transaction-modal');
+    const form = document.getElementById('transaction-form');
+    
+    if (!modal || !form) return;
+
+    // Pre-fill form for contribution
+    form.reset();
+    form.dataset.goalId = goalId;
+    form.querySelector('[name="category_type"]').value = 'income';
+    form.querySelector('[name="description"]').value = 'Goal Contribution';
+    
+    // Update modal title
+    modal.querySelector('.text-xl').textContent = 'Add Goal Contribution';
+    
+    openModal('transaction-modal');
 }
 
 // Chart Functions
@@ -1021,23 +1099,36 @@ async function handleTransactionFormSubmit(e) {
     e.preventDefault();
     const form = e.target;
     const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    // Add goal ID if this is a contribution
+    if (form.dataset.goalId) {
+        data.savings_goal_id = form.dataset.goalId;
+    }
 
     try {
         const response = await fetch('/api/transactions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(Object.fromEntries(formData))
+            body: JSON.stringify(data)
         });
 
-        if (response.ok) {
-            showNotification('Transaction added successfully');
-            form.closest('.modal').classList.add('hidden');
-            form.reset();
-            await loadDashboardData();
-        } else {
+        if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to add transaction');
+            throw new Error(errorData.error || 'Failed to add transaction');
         }
+
+        const result = await response.json();
+        showNotification(result.goal_updated ? 
+            'Contribution added and goal updated successfully' : 
+            'Transaction added successfully'
+        );
+        
+        closeModal('transaction-modal');
+        form.reset();
+        delete form.dataset.goalId;
+        await loadDashboardData();
+        
     } catch (error) {
         showNotification(error.message, 'error');
     }

@@ -71,11 +71,28 @@ class Transaction(db.Model):
     category_group = db.Column(db.String(50), nullable=False)
     category = db.Column(db.String(50), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    savings_goal_id = db.Column(db.Integer, db.ForeignKey('savings_goal.id'), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     is_recurring = db.Column(db.Boolean, default=False)
     recurring_frequency = db.Column(db.String(20), nullable=True)  # 'weekly', 'monthly', 'yearly'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def update_savings_goal(self):
+        """Update associated savings goal if this is a contribution"""
+        if not self.savings_goal_id:
+            return
+            
+        goal = SavingsGoal.query.get(self.savings_goal_id)
+        if not goal:
+            return
+            
+        if self.category_type == 'expense':
+            # Handle withdrawal from goal
+            goal.withdraw(abs(self.amount))
+        else:
+            # Handle contribution to goal
+            goal.contribute(self.amount)
 
 # Enhanced Budget Model
 class Budget(db.Model):
@@ -136,6 +153,83 @@ class SavingsGoal(db.Model):
     priority = db.Column(db.Integer, default=1)  # 1 (highest) to 5 (lowest)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def get_progress(self):
+        """Calculate progress percentage"""
+        if self.target_amount <= 0:
+            return 0
+        return min((self.current_amount / self.target_amount) * 100, 100)
+
+    def add_contribution(self, amount):
+        """Add a contribution to the goal"""
+        if amount <= 0:
+            raise ValueError("Contribution amount must be positive")
+        self.current_amount = min(self.current_amount + amount, self.target_amount)
+        db.session.commit()
+
+    def contribute(self, amount):
+        """Add a contribution to the goal with validation"""
+        if amount <= 0:
+            raise ValueError("Contribution amount must be positive")
+            
+        self.current_amount = min(self.current_amount + amount, self.target_amount)
+        db.session.commit()
+        return self.current_amount >= self.target_amount
+        
+    def withdraw(self, amount):
+        """Withdraw from the goal with validation"""
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be positive")
+            
+        self.current_amount = max(self.current_amount - amount, 0)
+        db.session.commit()
+        
+    def get_status(self):
+        """Get enhanced goal status information"""
+        progress = self.get_progress()
+        remaining = max(self.target_amount - self.current_amount, 0)
+        days_left = (self.target_date - datetime.now()).days
+        
+        monthly_needed = remaining / max(days_left / 30, 1) if days_left > 0 else 0
+        
+        status = {
+            'completed': progress >= 100,
+            'on_track': False,
+            'at_risk': False,
+            'behind': False
+        }
+        
+        # Calculate if goal is on track
+        if not status['completed']:
+            if days_left <= 0:
+                status['behind'] = True
+            else:
+                expected_progress = ((datetime.now() - self.created_at).days /
+                                  (self.target_date - self.created_at).days) * 100
+                variance = progress - expected_progress
+                
+                if variance >= -5:  # Within 5% of target
+                    status['on_track'] = True
+                elif variance >= -15:  # Within 15% of target
+                    status['at_risk'] = True
+                else:
+                    status['behind'] = True
+        
+        return {
+            'id': self.id,
+            'name': self.name,
+            'target_amount': self.target_amount,
+            'current_amount': self.current_amount,
+            'remaining': remaining,
+            'target_date': self.target_date.strftime('%Y-%m-%d'),
+            'days_left': max(days_left, 0),
+            'progress': progress,
+            'monthly_needed': monthly_needed,
+            'category': self.category,
+            'priority': self.priority,
+            'status': status,
+            'created_at': self.created_at.strftime('%Y-%m-%d')
+        }
 
 # Error Handler Decorator
 def handle_errors(f):
@@ -206,14 +300,58 @@ def handle_transactions():
 
     if request.method == 'POST':
         try:
-            data = request.json
+            print("Received transaction request:", request.data)  # Log raw request data
+            
+            if not request.is_json:
+                return jsonify({'error': 'Request must be JSON'}), 400
+                
+            data = request.get_json()
+            print("Parsed JSON data:", data)  # Log parsed JSON
+            
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
             required_fields = ['description', 'amount', 'category_type', 'category_group', 'category']
-            if not all(field in data for field in required_fields):
-                return jsonify({'error': 'Missing required fields'}), 400
+            missing_fields = [field for field in required_fields if field not in data]
+            if missing_fields:
+                return jsonify({
+                    'error': 'Missing required fields',
+                    'missing_fields': missing_fields
+                }), 400
+
+            # Validate amount is a number
+            try:
+                amount = float(data['amount'])
+                if amount <= 0:
+                    return jsonify({'error': 'Amount must be greater than 0'}), 400
+            except (ValueError, TypeError) as e:
+                print(f"Amount validation error: {str(e)}")
+                return jsonify({'error': 'Invalid amount format'}), 400
+
+            # Validate category type
+            if data['category_type'] not in ['income', 'expense']:
+                print(f"Invalid category type: {data['category_type']}")
+                return jsonify({'error': 'Invalid category type'}), 400
+
+            # Validate category exists in structure
+            if data['category_type'] not in CATEGORY_STRUCTURE:
+                print(f"Invalid category type in structure: {data['category_type']}")
+                return jsonify({'error': 'Invalid category type'}), 400
+                
+            if data['category_group'] not in CATEGORY_STRUCTURE[data['category_type']]:
+                print(f"Invalid category group: {data['category_group']}")
+                return jsonify({'error': 'Invalid category group'}), 400
+                
+            group_data = CATEGORY_STRUCTURE[data['category_type']][data['category_group']]
+            valid_categories = group_data if isinstance(group_data, list) else list(group_data.keys())
+            
+            if data['category'] not in valid_categories:
+                print(f"Invalid category: {data['category']}")
+                return jsonify({'error': 'Invalid category'}), 400
 
             transaction = Transaction(
                 description=data['description'],
-                amount=float(data['amount']),
+                amount=amount,
                 category_type=data['category_type'],
                 category_group=data['category_group'],
                 category=data['category'],
@@ -222,12 +360,42 @@ def handle_transactions():
                 recurring_frequency=data.get('recurring_frequency'),
                 user_id=session['user_id']
             )
+            
+            print("Creating transaction:", transaction.__dict__)
+            
+            # Check if this transaction matches any savings goal
+            if data['category_type'] == 'income':
+                savings_goal = SavingsGoal.query.filter_by(
+                    user_id=session['user_id'],
+                    category=data['category']
+                ).first()
+                
+                if savings_goal:
+                    transaction.savings_goal_id = savings_goal.id
+                    savings_goal.current_amount = min(
+                        savings_goal.current_amount + float(data['amount']),
+                        savings_goal.target_amount
+                    )
+                    db.session.add(savings_goal)
+            
+            # Check if transaction should be linked to a goal
+            goal_id = data.get('savings_goal_id')
+            if goal_id:
+                goal = SavingsGoal.query.get(goal_id)
+                if not goal or goal.user_id != session['user_id']:
+                    return jsonify({'error': 'Invalid savings goal'}), 400
+                transaction.savings_goal_id = goal_id
+            
             db.session.add(transaction)
             db.session.commit()
+            
+            # Update goal progress if linked
+            transaction.update_savings_goal()
 
             return jsonify({
                 'message': 'Transaction added successfully',
-                'id': transaction.id
+                'id': transaction.id,
+                'goal_updated': bool(goal_id)
             })
 
         except (KeyError, ValueError) as e:
@@ -567,18 +735,49 @@ def handle_savings_goals():
     if request.method == 'POST':
         try:
             data = request.json
+            
+            # Validate required fields
+            required_fields = ['name', 'target_amount', 'target_date', 'category']
+            missing_fields = [field for field in required_fields if field not in data]
+            if missing_fields:
+                return jsonify({
+                    'error': 'Missing required fields',
+                    'missing_fields': missing_fields
+                }), 400
+
+            # Validate target amount
+            try:
+                target_amount = float(data['target_amount'])
+                if target_amount <= 0:
+                    return jsonify({'error': 'Target amount must be greater than 0'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid target amount format'}), 400
+
+            # Validate target date
+            try:
+                target_date = datetime.strptime(data['target_date'], '%Y-%m-%d')
+                if target_date < datetime.now():
+                    return jsonify({'error': 'Target date cannot be in the past'}), 400
+            except ValueError:
+                return jsonify({'error': 'Invalid target date format (expected YYYY-MM-DD)'}), 400
+
             goal = SavingsGoal(
                 name=data['name'],
-                target_amount=float(data['target_amount']),
+                target_amount=target_amount,
                 current_amount=float(data.get('current_amount', 0)),
-                target_date=datetime.strptime(data['target_date'], '%Y-%m-%d'),
+                target_date=target_date,
                 category=data['category'],
                 priority=int(data.get('priority', 1)),
                 user_id=session['user_id']
             )
+            
             db.session.add(goal)
             db.session.commit()
-            return jsonify({'message': 'Savings goal created successfully', 'id': goal.id})
+            return jsonify({
+                'message': 'Savings goal created successfully',
+                'goal': goal.get_status()
+            })
+
         except (KeyError, ValueError) as e:
             return jsonify({'error': str(e)}), 400
 
@@ -589,13 +788,55 @@ def handle_savings_goals():
             if goal.user_id != session['user_id']:
                 return jsonify({'error': 'Unauthorized'}), 401
 
-            # Update fields if provided
-            for field in ['name', 'target_amount', 'current_amount', 'target_date', 'category', 'priority']:
-                if field in data:
-                    setattr(goal, field, data[field])
-            
+            # Update fields with validation
+            if 'name' in data:
+                goal.name = data['name']
+                
+            if 'target_amount' in data:
+                try:
+                    target_amount = float(data['target_amount'])
+                    if target_amount <= 0:
+                        return jsonify({'error': 'Target amount must be greater than 0'}), 400
+                    goal.target_amount = target_amount
+                except (ValueError, TypeError):
+                    return jsonify({'error': 'Invalid target amount format'}), 400
+                    
+            if 'current_amount' in data:
+                try:
+                    current_amount = float(data['current_amount'])
+                    if current_amount < 0:
+                        return jsonify({'error': 'Current amount cannot be negative'}), 400
+                    goal.current_amount = min(current_amount, goal.target_amount)
+                except (ValueError, TypeError):
+                    return jsonify({'error': 'Invalid current amount format'}), 400
+                    
+            if 'target_date' in data:
+                try:
+                    target_date = datetime.strptime(data['target_date'], '%Y-%m-%d')
+                    if target_date < datetime.now():
+                        return jsonify({'error': 'Target date cannot be in the past'}), 400
+                    goal.target_date = target_date
+                except ValueError:
+                    return jsonify({'error': 'Invalid target date format (expected YYYY-MM-DD)'}), 400
+                    
+            if 'category' in data:
+                goal.category = data['category']
+                
+            if 'priority' in data:
+                try:
+                    priority = int(data['priority'])
+                    if priority < 1 or priority > 5:
+                        return jsonify({'error': 'Priority must be between 1 and 5'}), 400
+                    goal.priority = priority
+                except (ValueError, TypeError):
+                    return jsonify({'error': 'Invalid priority format'}), 400
+
             db.session.commit()
-            return jsonify({'message': 'Savings goal updated successfully'})
+            return jsonify({
+                'message': 'Savings goal updated successfully',
+                'goal': goal.get_status()
+            })
+
         except (KeyError, ValueError) as e:
             return jsonify({'error': str(e)}), 400
 
@@ -611,16 +852,30 @@ def handle_savings_goals():
 
     # GET request
     goals = SavingsGoal.query.filter_by(user_id=session['user_id']).all()
+    return jsonify([goal.get_status() for goal in goals])
+
+@app.route('/api/savings-goals/<int:goal_id>/transactions')
+@handle_errors
+def get_goal_transactions(goal_id):
+    """Get all transactions associated with a specific goal"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    goal = SavingsGoal.query.get_or_404(goal_id)
+    if goal.user_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    transactions = Transaction.query.filter_by(
+        savings_goal_id=goal_id
+    ).order_by(Transaction.date.desc()).all()
+    
     return jsonify([{
-        'id': g.id,
-        'name': g.name,
-        'target_amount': g.target_amount,
-        'current_amount': g.current_amount,
-        'target_date': g.target_date.strftime('%Y-%m-%d'),
-        'category': g.category,
-        'priority': g.priority,
-        'progress': (g.current_amount / g.target_amount * 100) if g.target_amount > 0 else 0
-    } for g in goals])
+        'id': t.id,
+        'date': t.date.strftime('%Y-%m-%d'),
+        'description': t.description,
+        'amount': t.amount,
+        'category_type': t.category_type
+    } for t in transactions])
 
 @app.route('/api/export')
 @handle_errors
@@ -752,6 +1007,11 @@ def get_budget(budget_id):
     return jsonify(budget.get_status())
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.run(debug=True)
+    try:
+        with app.app_context():
+            db.create_all()
+            print("Database tables created successfully")
+        app.run(debug=True)
+    except Exception as e:
+        print(f"Error initializing database: {str(e)}")
+        raise
